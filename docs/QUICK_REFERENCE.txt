@@ -1,0 +1,93 @@
+════════════════════════════════════════════════════════════════════════
+ThinkPad Z13 Gen 1 ACPI 修复 - 快速参考卡
+════════════════════════════════════════════════════════════════════════
+
+📋 已应用的修复:
+
+1. ✅ 风扇控制 (thinkpad_acpi.fan_control=1)
+   文件: /boot/refind_linux.conf
+   状态: 已启用
+
+2. ✅ USB 3.0 - PC00→PCI0 别名
+   DSDT: Alias (PCI0, PC00)
+   文件: /boot/acpi_override (v0xF2)
+   预期: USB Type-C 恢复3.0速度
+
+3. ✅ USB-C 视频 - L850→DEV0 别名  
+   DSDT: Alias (L850, DEV0)
+   文件: /boot/acpi_override (v0xF2)
+   预期: USB-C视频输出可用
+
+4. ⏳ Lid传感器 - 版本升级+多Scope清理
+   文件: /boot/acpi_override (v0xF2)
+   预期: 合盖休眠正常
+
+════════════════════════════════════════════════════════════════════════
+
+🔄 验证清单 (重启后运行):
+
+□ sudo dmesg | grep "DSDT\|ACPI" | grep -i "error\|bug"
+  预期: 显著减少的错误消息
+
+□ lsusb -t
+  预期: USB Type-C 端口显示 "High-Speed" 或 "Super-Speed"
+
+□ xrandr 或 arandr
+  预期: USB-C 或 Thunderbolt 显示器显示
+
+□ cat /proc/acpi/button/lid/*/state
+  预期: open 或 closed (不是 unsupported)
+
+□ sudo journalctl -b | grep -i "suspend\|lid\|acpi"
+  预期: 合盖事件被记录
+
+════════════════════════════════════════════════════════════════════════
+
+📁 关键文件:
+
+源文件 (编辑用):      /home/drie/下载/dsdt_live.dsl
+备份 (安全用):        /home/drie/下载/dsdt_live.dsl.backup
+编译产物 (机器码):    /home/drie/下载/dsdt_live.aml
+启动覆盖 (实际使用):  /boot/acpi_override
+文档 (详细说明):      /home/drie/下载/ACPI_FIXES_APPLIED.md
+
+════════════════════════════════════════════════════════════════════════
+
+⚙️ 如需修改 DSDT:
+
+1. 编辑 /home/drie/下载/dsdt_live.dsl
+2. 升级版本号: 0x000000F2 → 0x000000F3 等
+3. 编译: cd /home/drie/下载 && iasl -oa -tc dsdt_live.dsl
+4. 打包: 
+   mkdir -p /tmp/build/kernel/firmware/acpi
+   cp dsdt_live.aml /tmp/build/kernel/firmware/acpi/dsdt.aml
+   cd /tmp/build && find kernel | cpio -H newc --create > acpi_override_new
+5. 部署: sudo cp acpi_override_new /boot/acpi_override
+6. 重启验证
+
+════════════════════════════════════════════════════════════════════════
+
+⚠️  故障排除:
+
+问题: 启动卡住或黑屏
+解决: 在rEFInd按 'a' 跳过acpi_override，回滚DSDT
+
+问题: ACPI错误仍然很多
+解决: 运行 sudo dmesg | grep "ACPI.*Error" 分析具体错误
+      可能需要进一步编辑EC0的多个Scope块
+
+问题: USB仍然是2.0
+解决: 确认 /boot/acpi_override 确实是v0xF2
+      检查 iasl -d /boot/acpi_override 看Alias是否存在
+
+════════════════════════════════════════════════════════════════════════
+
+✉️  问题报告:
+
+如果修复后仍有问题，请提供:
+1. sudo dmesg | head -100
+2. sudo lsusb -t
+3. cat /proc/acpi/button/lid/*/state
+4. xrandr
+
+════════════════════════════════════════════════════════════════════════
