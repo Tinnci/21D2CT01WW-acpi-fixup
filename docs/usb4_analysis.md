@@ -470,3 +470,28 @@ grep -r "PNP0CA0" /sys/bus/acpi/devices/*/hid 2>/dev/null
 # 完整固件版本
 fwupdmgr get-devices 2>/dev/null | head -30
 ```
+
+## 11. 最终结论
+
+### 所有软件绕过路径均已关闭
+
+经过全面的硬件级探测（XHCI MMIO 扩展能力链、EC RAM dump、PCI 拓扑分析、
+BIOS 设置接口、fwupd 能力、Thunderbolt 驱动匹配分析），结论如下:
+
+| 探测项 | 结果 | 影响 |
+|--------|------|------|
+| XHCI 扩展能力链 | 仅 USB 3.1，无 USB4 cap | 硅片级确认无 USB4 路由功能 |
+| USB4 NHI PCI 设备 | 不存在 (class 0880=0) | BIOS 未初始化 USB4 NHI 硬件 |
+| UCSI ACPI 设备 | 不存在 (PNP0CA0=0) | OS 无法管理 USB-C |
+| EC UCSI 邮箱 | 不实现 | DSDT override 无法绕过 |
+| BIOS USB4 设置 | 不存在 | think-lmi 无可用选项 |
+| Thunderbolt 域 | 空 | 无 USB4 隧道 |
+
+### 唯一解决方案: 更新 BIOS + EC 固件
+
+工程 BIOS `N3GET04WE (0.04f)` + EC `0.15` 缺少 USB4 初始化代码。
+量产 BIOS (`N3GETxxW`，无"E"后缀) 会：
+1. 在 PCIe 初始化时启用 USB4 NHI 硬件块
+2. 提供 UCSI ACPI 设备 (PNP0CA0)
+3. EC 实现 UCSI 邮箱协议
+4. 配置 Type-C mux 支持 SuperSpeed + Alt Mode
