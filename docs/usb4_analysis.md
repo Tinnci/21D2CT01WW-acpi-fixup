@@ -189,7 +189,231 @@ Thunderbolt 域:
 | Intel L830-EA 报告 sim-missing | 低 | 信息性 — 无 SIM 卡插入 |
 | Billboard 设备无驱动 | 低 | 正常 — 仅为协商失败标志 |
 
-## 8. 验证命令汇总
+## 8. 深度诊断：不更新 BIOS 的可能性分析
+
+### 8.1 平台固件全景
+
+| 组件 | 版本 | 状态 |
+|------|------|------|
+| CPU | Eng Sample: 100-000000527-41 N | **工程样片** |
+| BIOS | N3GET04WE (0.04f) | **工程版** |
+| EC | 0.15 | **工程版** |
+| PSP (Secure Processor) | 00.28.00.36 | RPMC 未启用 (非量产) |
+| SMU (电源管理单元) | 69.40.0 | Program 0 |
+| VBIOS | 29 (Rembrandt Generic) | **工程版** |
+
+> **结论**: 这是一台完整的工程样机，CPU 硬件本身是 Engineering Sample。
+
+### 8.2 可用的 Linux 调试接口
+
+| 接口 | 路径 | 访问权限 | 用途 |
+|------|------|----------|------|
+| EC I/O 端口 | `0x62` (data), `0x66` (cmd) | 需 root | 直接读写 EC 寄存器 |
+| EC debugfs | `/sys/kernel/debug/ec/` | 需 root | EC RAM dump |
+| think-lmi (BIOS 设置) | `/sys/class/firmware-attributes/thinklmi/` | 用户可读 | BIOS 设置查询/修改 |
+| thinkpad_acpi | `/sys/devices/platform/thinkpad_acpi/` | 部分可读 | ThinkPad 功能控制 |
+| AMD PSP | `/sys/devices/platform/AMDI0005:00/` | 可读 | SMU 版本查询 |
+| AMD PMC | `amd_pmc` 模块 | 可读 | 电源管理/S0ix |
+| AMD PMF | `amd_pmf` 模块 | 可读 | 电源管理框架 |
+| PCI config | `/sys/bus/pci/devices/*/config` | 前 64B 可读 | PCI 配置空间 |
+| XHCI MMIO | BAR0 `0xfd300000` (1MB) | 需 root `/dev/mem` | XHCI 寄存器 |
+| WMI | `/sys/bus/wmi/devices/` (28个GUID) | 部分可读 | BIOS WMI 接口 |
+| fwupd | `fwupdmgr` | 可用 | 固件更新 (有限) |
+| SPI ROM | PSP rpmc_spirom_available=1 | 需特殊工具 | BIOS 闪存 |
+
+### 8.3 BIOS 设置可访问项 (think-lmi)
+
+通过 `/sys/class/firmware-attributes/thinklmi/attributes/` 可读取的与 USB 相关设置：
+
+| 设置 | 当前值 | 可选值 |
+|------|--------|--------|
+| AlwaysOnUSB | (空) | Disable, Enable |
+| USBPortAccess | (空) | Disable, Enable |
+| HDMIModeSelect | (空) | HDMI1.4, HDMI2.0 |
+
+**注意**: BIOS 中**完全没有** Thunderbolt/USB4/PCIe Tunneling 相关设置。
+DSDT 中的 `PCIeTunneling` 选项值为 0，但在 think-lmi 中不可见（工程 BIOS 未暴露）。
+
+### 8.4 EC 寄存器分析
+
+EC RAM 范围: `0x00-0xED` (256 字节), 通过 `OperationRegion(ECOR, EmbeddedControl, 0, 0x100)` 定义。
+
+**USB-C 相关发现:**
+
+- `UCCI` mutex — 不是 UCSI 接口，而是 **USB-C Charger Interface** (充电同步锁)
+  - 用于 `_Q26`/`_Q27` (AC 电源状态变化) → `Notify(AC, 0x80)`
+  - 仅处理 USB-C PD 充电事件，不控制数据连接
+- `HUBS` (offset ~0x45) — USB Hub 状态标志位
+- EC 没有 UCSI 标准寄存器 (`VERS`, `CCI`, `CTL`, `MSG` 字段均不存在)
+
+**结论**: EC 0.15 仅实现基础充电检测，不支持 UCSI 数据协商协议。
+
+### 8.5 USB4 NHI 缺失的硬件证据
+
+```
+PCI Bus 04 (内部桥 00:08.1):
+  04:00.0  0300  VGA     ← 存在
+  04:00.1  0403  Audio   ← 存在
+  04:00.2  1080  PSP     ← 存在
+  04:00.3  0c03  XHCI#1  ← 存在 (USB4 名称，但无 USB4 功能)
+  04:00.4  0c03  XHCI#2  ← 存在
+  04:00.5  0480  ACP     ← 存在
+  04:00.6  0403  HD Audio ← 存在
+  04:00.7  1180  SFH     ← 存在
+  (无 0880)              ← NHI 应在此 (PCI class 0880 = System Other)
+
+全系统 PCI class 0880 设备数: 0
+```
+
+- AMD Rembrandt USB4 NHI 需要独立 PCI 功能号 (预期 class 0880)
+- 工程 BIOS 未在 PCIe 初始化时枚举 NHI
+- Bus 04 的 8 个功能位 (0-7) 已全部分配给其他设备
+
+### 8.6 Thunderbolt 驱动分析
+
+```
+thunderbolt 模块状态: 已加载 (610304 bytes)
+绑定设备数: 0
+thunderbolt domains: (空)
+
+PCI ID 匹配: thunderbolt 模块仅匹配 Intel (8086) NHI 设备
+  → AMD USB4 NHI 使用 AMD (1022) VID，但需要 NHI PCI 设备存在
+  → 当前系统中的 AMD XHCI 设备 (1022:161a/b/c) 使用 xhci_hcd 驱动
+```
+
+### 8.7 不更新 BIOS 的潜在方案评估
+
+#### 方案 A: 通过 SMN 寄存器启用 USB4 路由器
+- **可行性**: ❓ 理论上可能但极高风险
+- AMD Rembrandt SoC 的 USB4 路由器 IP 通过 SMN (System Management Network) 控制
+- 需要知道精确的 SMN 寄存器地址 (AMD 未公开文档)
+- **风险**: 写入错误值可能导致系统挂死或硬件损坏
+- **方法**: `sudo setpci -s 00:00.0 0xC0.L=<SMN_ADDR>; sudo setpci -s 00:00.0 0xC4.L`
+- **现实**: 即使知道地址，USB4 路由器初始化是复杂多步序列，非单个寄存器可控
+
+#### 方案 B: DSDT 添加 UCSI (PNP0CA0) 设备
+- **可行性**: ❌ 不可行
+- 即使添加 ACPI 设备定义，EC 0.15 不支持 UCSI 邮箱协议
+- EC 不会响应 UCSI 命令 → 驱动会超时
+- 已验证: 模块加载后 `/sys/class/typec/` 为空
+
+#### 方案 C: XHCI MMIO 扩展能力探测
+- **可行性**: ✅ 可作为诊断
+- XHCI 扩展能力链起始于 PCI config offset 0x48
+- 需要 root 读取 XHCI MMIO (BAR0 = `0xfd300000`)
+- 目标: 检查是否存在 USB4 Router Operation Region (capability ID 见 XHCI spec)
+- **诊断命令** (需root):
+```bash
+# 读取 XHCI HCCPARAMS1 (offset 0x10) 中的 xECP 指针
+sudo python3 -c "
+import mmap, struct, os
+fd = os.open('/dev/mem', os.O_RDONLY | os.O_SYNC)
+m = mmap.mmap(fd, 0x1000, offset=0xfd300000)
+hccparams1 = struct.unpack('<I', m[0x10:0x14])[0]
+xecp = (hccparams1 >> 16) & 0xFFFF
+print(f'HCCPARAMS1: 0x{hccparams1:08x}')
+print(f'xECP offset: 0x{xecp * 4:x}')
+# 遍历扩展能力链
+offset = xecp * 4
+while offset and offset < 0x1000:
+    cap = struct.unpack('<I', m[offset:offset+4])[0]
+    cap_id = cap & 0xFF
+    next_offset = ((cap >> 8) & 0xFF) * 4
+    print(f'  Cap @ 0x{offset:04x}: ID=0x{cap_id:02x} Next=0x{next_offset:04x}')
+    if cap_id == 0: break
+    offset = next_offset if next_offset else 0
+m.close()
+os.close(fd)
+"
+```
+
+#### 方案 D: EC RAM 全量 dump + 逆向
+- **可行性**: ✅ 可作为研究
+- 通过 EC Debug 接口读取全部 256 字节 RAM
+- **诊断命令** (需root):
+```bash
+# 方法1: debugfs
+sudo cat /sys/kernel/debug/ec/ec0/io | xxd
+
+# 方法2: 直接 IO 端口
+sudo python3 -c "
+import os, time
+# EC IO: data=0x62, cmd=0x66
+fd = os.open('/dev/port', os.O_RDWR)
+def ec_read(addr):
+    os.lseek(fd, 0x66, 0); os.write(fd, bytes([0x80]))  # READ command
+    time.sleep(0.001)
+    os.lseek(fd, 0x62, 0); os.write(fd, bytes([addr]))
+    time.sleep(0.001)
+    os.lseek(fd, 0x62, 0); return os.read(fd, 1)[0]
+
+for i in range(0, 256, 16):
+    row = [ec_read(i+j) for j in range(16)]
+    print(f'{i:02x}: ' + ' '.join(f'{b:02x}' for b in row))
+os.close(fd)
+"
+```
+
+#### 方案 E: SPI Flash BIOS dump → 分析 → 修改
+- **可行性**: ⚠️ 高风险，但理论上可行
+- PSP 的 `rpmc_spirom_available=1` 表明 SPI ROM 可访问
+- 可使用 `flashrom` 或内核 SPI 框架 dump BIOS
+- 需要 AMD AGESA/PSP 逆向工程知识来修改 USB4 初始化
+- **极高风险**: 变砖可能性大
+
+#### 方案 F: fwupd 尝试更新个别组件
+- **可行性**: ✅ 部分可行
+- fwupd 可见:
+  - Synaptics Prometheus (指纹): 可独立更新
+  - UEFI Secure Boot 证书: 可更新
+  - TPM: 7.1.3.13
+- fwupd **不可见**:
+  - BIOS 主体 (工程版无 UEFI Capsule 支持)
+  - EC 固件
+  - AMD 微码 (来自 linux-firmware 包)
+
+## 9. 建议的诊断步骤 (需要 sudo)
+
+在自己的终端中运行以下命令获取更深层信息:
+
+```bash
+# === 第一步: EC 全量 dump ===
+sudo cat /sys/kernel/debug/ec/ec0/io | xxd > ~/ec_dump.txt
+echo "EC dump saved"
+
+# === 第二步: XHCI 扩展能力探测 ===
+sudo python3 << 'EOF'
+import mmap, struct, os
+fd = os.open('/dev/mem', os.O_RDONLY | os.O_SYNC)
+m = mmap.mmap(fd, 0x1000, offset=0xfd300000)
+hccparams1 = struct.unpack('<I', m[0x10:0x14])[0]
+xecp = (hccparams1 >> 16) & 0xFFFF
+print(f'HCCPARAMS1: 0x{hccparams1:08x}, xECP at 0x{xecp*4:x}')
+offset = xecp * 4
+while offset and offset < 0x1000:
+    cap = struct.unpack('<I', m[offset:offset+4])[0]
+    cap_id = cap & 0xFF
+    next_off = ((cap >> 8) & 0xFF) * 4
+    size_dw = (cap >> 16) & 0xFFFF if cap_id >= 192 else 0
+    known = {1:'USB Legacy',2:'Supported Protocol',192:'USB4 Router',
+             193:'Intel-specific',194:'Vendor',0xC1:'Debug'}
+    name = known.get(cap_id, f'Unknown(0x{cap_id:02x})')
+    print(f'  0x{offset:04x}: {name} (ID={cap_id}), next=0x{next_off:04x}')
+    if cap_id == 0 or next_off == 0: break
+    offset = next_off
+m.close(); os.close(fd)
+EOF
+
+# === 第三步: PCI 完整 config dump ===
+sudo lspci -vvv -s 04:00.3 > ~/xhci_pci_dump.txt
+echo "XHCI PCI dump saved"
+
+# === 第四步: 内核日志 (本次启动) ===
+sudo journalctl -b -k | grep -iE "usb4|thunderbolt|ucsi|typec|xhci|usb.*rout" > ~/kernel_usb_log.txt
+echo "Kernel USB log saved"
+```
+
+## 10. 验证命令汇总 (无需sudo)
 
 ```bash
 # 检查 BIOS/EC 版本
@@ -209,4 +433,7 @@ lsusb -t
 
 # 检查 ACPI 中是否存在 PNP0CA0
 grep -r "PNP0CA0" /sys/bus/acpi/devices/*/hid 2>/dev/null
+
+# 完整固件版本
+fwupdmgr get-devices 2>/dev/null | head -30
 ```
