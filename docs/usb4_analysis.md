@@ -413,46 +413,38 @@ os.close(fd)
   - EC 固件
   - AMD 微码 (来自 linux-firmware 包)
 
-## 9. 建议的诊断步骤 (需要 sudo)
+## 9. EC RAM 完整 dump (2026-03-06)
 
-在自己的终端中运行以下命令获取更深层信息:
+通过 `sudo modprobe ec_sys write_support=1` + `sudo xxd /sys/kernel/debug/ec/ec0/io` 获取:
 
-```bash
-# === 第一步: EC 全量 dump ===
-sudo cat /sys/kernel/debug/ec/ec0/io | xxd > ~/ec_dump.txt
-echo "EC dump saved"
-
-# === 第二步: XHCI 扩展能力探测 ===
-sudo python3 << 'EOF'
-import mmap, struct, os
-fd = os.open('/dev/mem', os.O_RDONLY | os.O_SYNC)
-m = mmap.mmap(fd, 0x1000, offset=0xfd300000)
-hccparams1 = struct.unpack('<I', m[0x10:0x14])[0]
-xecp = (hccparams1 >> 16) & 0xFFFF
-print(f'HCCPARAMS1: 0x{hccparams1:08x}, xECP at 0x{xecp*4:x}')
-offset = xecp * 4
-while offset and offset < 0x1000:
-    cap = struct.unpack('<I', m[offset:offset+4])[0]
-    cap_id = cap & 0xFF
-    next_off = ((cap >> 8) & 0xFF) * 4
-    size_dw = (cap >> 16) & 0xFFFF if cap_id >= 192 else 0
-    known = {1:'USB Legacy',2:'Supported Protocol',192:'USB4 Router',
-             193:'Intel-specific',194:'Vendor',0xC1:'Debug'}
-    name = known.get(cap_id, f'Unknown(0x{cap_id:02x})')
-    print(f'  0x{offset:04x}: {name} (ID={cap_id}), next=0x{next_off:04x}')
-    if cap_id == 0 or next_off == 0: break
-    offset = next_off
-m.close(); os.close(fd)
-EOF
-
-# === 第三步: PCI 完整 config dump ===
-sudo lspci -vvv -s 04:00.3 > ~/xhci_pci_dump.txt
-echo "XHCI PCI dump saved"
-
-# === 第四步: 内核日志 (本次启动) ===
-sudo journalctl -b -k | grep -iE "usb4|thunderbolt|ucsi|typec|xhci|usb.*rout" > ~/kernel_usb_log.txt
-echo "Kernel USB log saved"
 ```
+00: 00 00 00 55 00 00 00 00 00 00 00 00 00 00 00 00  ...U............
+10: 00 00 00 00 00 00 00 80 00 00 80 00 01 00 00 00  ................
+20: 30 30 00 00 00 00 00 00 00 00 00 00 00 00 00 00  00..............
+30: e8 19 50 60 0f 00 00 00 97 00 c4 00 00 57 00 00  ..P`.........W..
+40: 00 20 de ff df 00 54 27 80 01 00 06 80 00 00 00  . ....T'........
+50: 5d 00 2b 00 00 00 00 00 00 00 00 00 00 00 1b 87  ].+.............
+60: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+70: 00 00 00 00 03 00 e8 19 00 00 00 00 e8 19 00 00  ................
+80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+90: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+a0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+b0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+c0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+d0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+e0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+f0: 4e 33 47 48 54 31 35 57 2c 25 49 2c 0b 02 01 05  N3GHT15W,%I.....
+```
+
+关键字段:
+| 偏移 | 值 | DSDT 字段 | 含义 |
+|------|-----|-----------|------|
+| 0x38 | 0x97 | MBTS+MCHG | 电池在位，充电至 23% |
+| 0x46 | 0x54 | HPAC+HPLD | AC 已接, 盖子打开 |
+| 0xF0-F7 | "N3GHT15W" | — | EC 固件版本字符串 |
+| 0x45 | 0x00 | HUBS | Hub Status = 0 (EC 未检测到 USB hub) |
+
+EC RAM 中**无 UCSI 标准寄存器** (VERS/CCI/CTL/MSG)，确认 EC 0.15 不实现 UCSI。
 
 ## 10. 验证命令汇总 (无需sudo)
 
