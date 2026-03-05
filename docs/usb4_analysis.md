@@ -297,34 +297,75 @@ PCI ID 匹配: thunderbolt 模块仅匹配 Intel (8086) NHI 设备
 - EC 不会响应 UCSI 命令 → 驱动会超时
 - 已验证: 模块加载后 `/sys/class/typec/` 为空
 
-#### 方案 C: XHCI MMIO 扩展能力探测
-- **可行性**: ✅ 可作为诊断
-- XHCI 扩展能力链起始于 PCI config offset 0x48
-- 需要 root 读取 XHCI MMIO (BAR0 = `0xfd300000`)
-- 目标: 检查是否存在 USB4 Router Operation Region (capability ID 见 XHCI spec)
-- **诊断命令** (需root):
+#### 方案 C: XHCI MMIO 扩展能力探测 ✅ 已完成
+- **结果**: ❌ **USB4 Router Operations 能力不存在**
+- XHCI 扩展能力链通过 debugfs (`/sys/kernel/debug/usb/xhci/`) 成功获取
+- 注: PCI sysfs resource0 的 mmap 被 `CONFIG_IO_STRICT_DEVMEM=y` 阻止 (驱动独占 BAR)
+
+**实际探测数据 (2026-03-06):**
+
+##### XHC0 (04:00.3, USB-C 端口)
+| 参数 | 值 | 含义 |
+|------|-----|------|
+| HCIVERSION | 0x0110 | xHCI 1.10 (仅 USB 3.1，非 USB4) |
+| HCSPARAMS1 | 0x06000840 | 6 ports, 64 slots |
+| HCCPARAMS1 | 0x0120ffc5 | xECP @ 0x0480 |
+| HCCPARAMS2 | 0x0000003f | |
+
+扩展能力链:
+```
+[0] cap=0x01 USB Legacy Support
+[1] cap=0x02 Supported Protocol 'USB ' 2.0 — ports 1-4
+[2] cap=0x02 Supported Protocol 'USB ' 3.10 — port 5 (5/10 Gbps)
+[3] cap=0x02 Supported Protocol 'USB ' 3.10 — port 6 (5/10 Gbps)
+[4] cap=0x0A Debug Capability → END
+→ 无 cap_id ≥ 0xC0 (USB4 Router Operations)
+```
+
+##### XHC1 (04:00.4, 内部设备)
+| 参数 | 值 | 含义 |
+|------|-----|------|
+| HCIVERSION | 0x0110 | xHCI 1.10 |
+| HCSPARAMS1 | 0x05000840 | 5 ports, 64 slots |
+
+扩展能力链:
+```
+[0] cap=0x01 USB Legacy Support
+[1] cap=0x02 Supported Protocol 'USB ' 2.0 — ports 1-3
+[2] cap=0x02 Supported Protocol 'USB ' 3.10 — port 4 (5/10 Gbps)
+[3] cap=0x02 Supported Protocol 'USB ' 3.10 — port 5 (5/10 Gbps)
+[4] cap=0x0A Debug Capability → END
+→ 无 USB4 Router Operations
+```
+
+##### XHC2 (05:00.0, IR 摄像头)
+| 参数 | 值 | 含义 |
+|------|-----|------|
+| HCIVERSION | 0x0110 | xHCI 1.10 |
+| HCSPARAMS1 | 0x01000840 | 1 port, 64 slots |
+
+扩展能力链:
+```
+[0] cap=0x01 USB Legacy Support
+[1] cap=0x02 Supported Protocol 'USB ' 2.0 — port 1
+[2] cap=0x0A Debug Capability → END
+→ 无 USB4 Router Operations
+```
+
+##### 硬件级结论
+**三个 XHCI 控制器均仅报告 xHCI 1.10 (USB 3.1)，无 USB4 Router Operations 扩展能力.**
+
+这证实 USB4 路由器是**独立的 NHI PCI 设备** (非 XHCI 控制器的子功能)。
+工程 BIOS 在 PCIe 初始化阶段根本没有启用 USB4 NHI 硬件块，而 Bus 04 的全部 8 个 function slot (0-7) 已被其他设备占满。
+
+**探测方法** (需 root):
 ```bash
-# 读取 XHCI HCCPARAMS1 (offset 0x10) 中的 xECP 指针
-sudo python3 -c "
-import mmap, struct, os
-fd = os.open('/dev/mem', os.O_RDONLY | os.O_SYNC)
-m = mmap.mmap(fd, 0x1000, offset=0xfd300000)
-hccparams1 = struct.unpack('<I', m[0x10:0x14])[0]
-xecp = (hccparams1 >> 16) & 0xFFFF
-print(f'HCCPARAMS1: 0x{hccparams1:08x}')
-print(f'xECP offset: 0x{xecp * 4:x}')
-# 遍历扩展能力链
-offset = xecp * 4
-while offset and offset < 0x1000:
-    cap = struct.unpack('<I', m[offset:offset+4])[0]
-    cap_id = cap & 0xFF
-    next_offset = ((cap >> 8) & 0xFF) * 4
-    print(f'  Cap @ 0x{offset:04x}: ID=0x{cap_id:02x} Next=0x{next_offset:04x}')
-    if cap_id == 0: break
-    offset = next_offset if next_offset else 0
-m.close()
-os.close(fd)
-"
+# 通过 xhci debugfs 获取扩展能力 (无需 /dev/mem)
+sudo cat /sys/kernel/debug/usb/xhci/0000:04:00.3/reg-cap
+sudo cat /sys/kernel/debug/usb/xhci/0000:04:00.3/reg-ext-protocol:00
+sudo cat /sys/kernel/debug/usb/xhci/0000:04:00.3/reg-ext-protocol:01
+sudo cat /sys/kernel/debug/usb/xhci/0000:04:00.3/reg-ext-protocol:02
+sudo cat /sys/kernel/debug/usb/xhci/0000:04:00.3/reg-ext-dbc:00
 ```
 
 #### 方案 D: EC RAM 全量 dump + 逆向
