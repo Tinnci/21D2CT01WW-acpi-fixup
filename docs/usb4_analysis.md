@@ -475,27 +475,371 @@ grep -r "PNP0CA0" /sys/bus/acpi/devices/*/hid 2>/dev/null
 fwupdmgr get-devices 2>/dev/null | head -30
 ```
 
-## 11. 最终结论
+## 11. SPI Flash 全量分析 (2026-03-06)
 
-### 所有软件绕过路径均已关闭
+### 11.1 SPI Flash 基础信息
 
-经过全面的硬件级探测（XHCI MMIO 扩展能力链、EC RAM dump、PCI 拓扑分析、
-BIOS 设置接口、fwupd 能力、Thunderbolt 驱动匹配分析），结论如下:
+| 项目 | 值 |
+|------|-----|
+| 芯片 | Winbond W25Q256JW (32MB SPI NOR) |
+| 映射地址 | 0xFE000000 |
+| Dump 大小 | 33,554,432 bytes |
+| MD5 | `5e6c35c93cb9eef266f3a2cfa9d42f80` |
+| SHA256 | `b6ed560fce88e250a3fd60b9f09ba4cc9bdcbe0a1fc3ed072a0f842dff75a3b1` |
+| 二次读取校验 | ✅ 一致 |
 
-| 探测项 | 结果 | 影响 |
+### 11.2 关键发现：USB4 初始化代码**存在**于固件中
+
+**这颠覆了之前"代码不存在"的结论。** SPI dump 中找到了完整的 USB4 子系统代码：
+
+| 组件 | 偏移 | 所在模块 | 说明 |
+|------|------|----------|------|
+| `UCSI` | 0x091530 | PHCM blob (PD 控制器 FW) | UCSI 协议字符串 |
+| `ucsi_cb:` | 0x09441C | PHCM | UCSI 回调函数 |
+| `Ucsi Init` | 0x094FEC | PHCM | UCSI 初始化入口 |
+| `alt_mode_cb:` | 0x094068 | PHCM | Alt Mode 回调函数 |
+| `PPMreset_hd:` | 0x09451C | PHCM | PPM (Policy Power Manager) 重置 |
+| `port_cmd_hd:` | 0x094A64 | PHCM | 端口命令处理器 |
+| `ppm_cmd_hd:` | 0x094DE4 | PHCM | PPM 命令处理器 |
+| `pd_event_hd:` | 0x0951C8 | PHCM | PD 事件处理器 |
+| `MuxR` | 0x0933E0 | PHCM | Type-C Mux 读取 |
+| `PBMs` / `PBMc` / `PBMe` | 0x093148 | PHCM | PD Bus Manager (start/complete/end) |
+| `I2Cr` / `I2Cw` | 0x0929C8 | PHCM | I2C 读写 (PD 控制器通信) |
+| `rsmu_usb4.c` | 0x256740 | SMU FW (RSMU) | USB4 电源/时钟管理 |
+| `rsmu_usb4phy0.c` | 0x256750 | SMU FW (RSMU) | USB4 PHY 0 初始化 |
+| `rsmu_usb4phy1.c` | 0x256764 | SMU FW (RSMU) | USB4 PHY 1 初始化 |
+| `rsmu_usb4rt0.c` | 0x256778 | SMU FW (RSMU) | USB4 Router 0 初始化 |
+| `rsmu_usb4rt1.c` | 0x256788 | SMU FW (RSMU) | USB4 Router 1 初始化 |
+| `nHiF` / `NHiF` | 0x2415D8 | SMU FW 内嵌代码 | NHI 功能调用 |
+| `gNHI` | 0xBD2ECA | Type 0x88 模块 | 全局 NHI 数据结构 |
+
+### 11.3 PHCM — PD 控制器固件
+
+| 项目 | 值 |
+|------|-----|
+| 签名 | `PHCM` |
+| 偏移 | 0x081000 |
+| 大小 | ~121KB (0x1E400) |
+| 平台标识 | `PHCM_1701_MAYANLILAC2021-07-12` |
+| AGESA 版本 | 0.1.97321 |
+| 构建 commit | 4ade9ed |
+| 代码类型 | ARM Cortex-M 固件 (Thumb-2 指令集) |
+
+PHCM 是运行在 AMD SoC 内部 M0/M3 核心上的 PD 控制器固件。它包含完整的 UCSI 协议栈：
+- UCSI 命令处理器 (`ucsi_cb`, `ppm_cmd_hd`, `port_cmd_hd`)
+- Alt Mode 协商 (`alt_mode_cb`)
+- PD 事件处理 (`pd_event_hd`, `pd_event_hd: Disconn->> set DRP`)
+- Type-C Mux 控制 (`MuxR`)
+- PD SPI Flash 更新 (`After flash PD SPI & PD reset`)
+- PPM 重置/恢复 (`PPMreset_hd`, `reset_hd`, `CONN_reset->> set DRP`)
+
+**关键发现：代码在等待被调用，但从未被调用过。**
+
+### 11.4 RSMU (Root SMU) USB4 模块
+
+SMU 固件中包含 USB4 电源/时钟域管理代码：
+
+```
+rsmu_usb0.c  → USB 基础控制器 0 (XHCI)
+rsmu_usb1.c  → USB 基础控制器 1
+rsmu_usb2.c  → USB 基础控制器 2
+rsmu_usb3.c  → USB 基础控制器 3
+rsmu_usb4.c  → USB4 总线控制器 (独立于 XHCI)
+rsmu_usb4phy0.c → USB4 PHY 端口 0 (左侧 USB-C?)
+rsmu_usb4phy1.c → USB4 PHY 端口 1 (右侧 USB-C?)
+rsmu_usb4rt0.c  → USB4 Router 0
+rsmu_usb4rt1.c  → USB4 Router 1
+```
+
+RSMU 区域存在两份完全相同的副本：
+- 副本 1: 0x256000 区域
+- 副本 2: 0x61E000 区域 (偏移差 0x3C8000)
+
+这是 AMD SPI 固件的标准冗余布局 — A/B 分区用于安全恢复。
+
+### 11.5 PSP 固件目录结构
+
+```
+SPI Flash (32MB Winbond W25Q256JW)
+├── 0x020000  EFS (Embedded Firmware Structure)
+├── 0x0C1000  PSP Combo Directory ($PSP) → 2 条目
+│   ├── 0x0C3000  Sub-dir 0
+│   └── 0x0C4000  Sub-dir 1
+├── 0x0C5000  PSP L2 Directory ($PL2) — 43 条目 ← 主 PSP 目录
+│   ├── [0]  AMD_PUBLIC_KEY    @0x000400 (1KB)
+│   ├── [1]  PSP_BOOTLOADER    @0x000900 (7KB)
+│   ├── [3]  PSP_TOS           @0x015E00 (81KB)
+│   ├── [9]  ABL1              @0x06E700 (128KB)
+│   ├── [10] SMN_FW2 sub=0     @0x08E800 (103KB) ← 内含 UCSI 引用
+│   ├── [11] SMN_FW2 sub=1     @0x0A8700 (118KB)
+│   ├── [22] AGESA_PEI         @0x111600 (436KB)
+│   ├── [31] DXIO_PHY_SRAM     @0x191100 (289KB) ← USB/PCIe PHY 初始化码
+│   └── [42] BIOS_RTM_PUBKEY   @0x380000
+├── 0x445000  BIOS L2 ($BL2) — 19 条目
+│   ├── [3]  APOB_NV           @0x004000 (32KB)
+│   ├── [9]  APCB_DATA         @0x16CF000 (1.7MB) ← 板级配置
+│   └── [18] BIOS_BIN          @0x043500 (5.4KB)
+├── 0x446000  APCB (board config, 多实例)
+│   ├── @0x446000  uid=0x9F9494  1KB
+│   ├── @0x449000  uid=0x269C    30KB ← 主 APCB
+│   └── @0x451000  uid=0x23DE    0.4KB
+├── 0x48D000  PSP L2 备份副本 ($PL2)
+├── 0x80D000  BIOS L2 备份副本 ($BL2)
+└── 0x081000  PHCM (PD Controller FW, 121KB) ← USB-C 管理固件
+```
+
+### 11.6 APCB 配置 — 无 USB4 令牌
+
+**对所有 6 个 APCB 实例进行了穷举搜索**（包含 1.7MB 主配置数据），
+以下关键词均**未找到**：
+
+`USB4`, `Usb4`, `usb4`, `UCSI`, `ucsi`, `NHI`, `nhi`, `TypeC`, `typec`,
+`PcieTunnel`, `DpTunnel`, `UsbTunnel`, `Usb4En`, `USB4_EN`, `NhiEn`
+
+**结论**: 工程版 APCB 中完全没有 USB4 启用令牌。量产 BIOS 的 APCB 会包含这些令牌。
+
+### 11.7 修正后的因果链
+
+```
+工程 BIOS (0.04f, 2021-09)
+    │
+    ├─→ APCB 配置中无 USB4 令牌
+    │       └─→ AGESA/ABL 启动序列跳过 USB4 初始化
+    │
+    ├─→ SMU RSMU 有 USB4 模块代码 (rsmu_usb4*.c)
+    │   但因 APCB 无令牌 → SMU 从不调用 USB4 PHY/Router init
+    │       └─→ USB4 PHY 未上电 + Router 未配置
+    │               └─→ PCIe 枚举时无 NHI 设备出现
+    │
+    ├─→ PHCM blob 有完整 UCSI 协议栈
+    │   但因 USB4 Router 不存在 → PHCM 初始化路径被跳过
+    │       └─→ UCSI/Alt Mode/Mux 代码成为死代码
+    │
+    └─→ 最终结果：
+        ├─ XHCI 控制器正常 (USB 2.0 + USB 3.1)
+        ├─ USB4 NHI = 未枚举 (PCI bus 上不存在)
+        ├─ Type-C Mux = 未配置 (SS 通道不可用)
+        └─ UCSI = 无设备 (EC 未被要求初始化 UCSI 邮箱)
+```
+
+### 11.8 硬件能力确认
+
+SPI 分析**证实硅片具备 USB4 能力**：
+- **2 × USB4 PHY** (phy0, phy1) — 对应 2 个 USB-C 端口
+- **2 × USB4 Router** (rt0, rt1) — 完整的 USB4 路由引擎
+- **NHI 代码** — gNHI 全局数据结构存在 (UEFI DXE 阶段)
+- **UCSI 协议栈** — 运行在 PHCM/PSP 上的完整实现
+- **Mux 控制** — 信号路由硬件存在
+- **PD Bus Manager** — USB PD 协商代码已编译
+
+问题不是硬件缺失，而是 **APCB 配置未包含启用 USB4 的令牌**。
+
+## 12. 最终结论
+
+### 原结论需要修正
+
+之前认为"USB4 代码不存在" — 这是**错误的**。
+
+SPI 全量分析证明：
+1. SMU 固件中有完整的 USB4 PHY + Router 电源/时钟管理代码 (`rsmu_usb4*.c`)
+2. PHCM 中有完整的 UCSI/Alt Mode/Mux 控制代码
+3. UEFI DXE 阶段有 NHI 数据结构 (`gNHI`)
+4. ARM 级 PD 事件/命令处理器均已编译
+
+### 真正的阻塞点
+
+**APCB (AMD Platform Configuration Block) 中缺少 USB4 启用令牌。**
+
+APCB 是 AGESA 启动流程的"开关面板"。当 USB4 令牌不存在时，
+ABL (AGESA Boot Loader) 在 Stage 0-6 执行过程中跳过 USB4 初始化序列，
+导致 SMU 从不调用 `rsmu_usb4*.c` 中的代码，PHCM 从不进入 UCSI 初始化路径。
+
+### 可能的修复路径（理论）
+
+| 路径 | 可行性 | 风险 |
+|------|--------|------|
+| **修改 APCB 添加 USB4 令牌** | ❓ 理论上可能 | ⚠️ 高 — 需要精确的令牌 ID + 值 |
+| **替换 APCB 为量产版本** | ❓ 需获取量产 BIOS dump | ⚠️ 高 — 板级配置差异 |
+| **通过 SMN 直接启用 USB4** | ❓ 极端方案 | 🔴 极高 — 无公开文档 |
+| **更新整个 BIOS 到量产版** | ✅ 最安全可靠 | ⚠️ 中 — 需 SPI 编程器或闪写工具 |
+
+### 下一步建议
+
+1. ~~获取量产 BIOS dump~~ → ✅ 已完成（见第 13 节）
+2. **AMD APCB 令牌文档** — 搜索 coreboot/openSIL 项目中 Rembrandt APCB 令牌定义
+3. **尝试 fwupdmgr** — 虽然 BIOS 不可见，但尝试强制更新仍值得一试
+4. **保留 SPI dump** — 作为恢复备份，万一刷写失败可通过外部编程器还原
+
+## 13. 生产 BIOS 固件对比分析
+
+> 分析日期: 2026-03-06
+> 目标: 对比工程版 (N3GET04WE) 与生产版 (N3GET74W) BIOS 固件
+
+### 13.1 固件来源
+
+| 项目 | 工程 BIOS (当前) | 生产 BIOS (N3GET74W) |
+|------|------------------|---------------------|
+| **来源** | SPI Flash 直读 (flashrom) | Lenovo 官网 ISO (n3gur25w.iso) |
+| **BIOS 版本** | N3GET04WE (0.04f) | N3GET74W |
+| **EC 版本** | 0.15 | N3GHT68W |
+| **大小** | 32MB (SPI 全量) | 33MB FL1 + 320KB FL2 |
+| **构建日期** | 2021-09-09 | 2025-08-20 |
+
+### 13.2 ISO 拆解过程
+
+```
+n3gur25w.iso (52 MB)
+├── El Torito 引导记录 (Nero Burning ROM v12)
+├── MBR 引导映像 @ sector 27 (偏移 0xD800)
+│   └── 分区 1: FAT32, 51 MB
+│       ├── EFI/Boot/BootX64.efi     (2.1 MB, UEFI 闪写启动器)
+│       └── Flash/
+│           ├── BootX64.efi           (2.1 MB, 同上)
+│           ├── NoDCCheck_BootX64.efi (2.1 MB, 无电源检查版)
+│           ├── SHELLFLASH.EFI        (23 KB, EFI Shell)
+│           └── N3GET74W/
+│               ├── $0AN3G00.FL1      (33 MB, 主 BIOS)
+│               └── $0AN3G00.FL2      (320 KB, EC 固件)
+```
+
+### 13.3 FL1 BIOS 结构
+
+FL1 = Lenovo 封装头 (0x320 bytes) + UEFI BIOS 映像
+
+- **首个 FV**: 偏移 0x50, 大小 33.7 MB (整个 BIOS 区域)
+- **EFS**: 偏移 0x20320 (= SPI 0x20000 + 0x320Δ)
+- **PSP Combo**: 偏移 0xC1320 → PL2 @ 0xC5320 → BL2 @ 0x445320
+- **PHCM**: 偏移 0x81320 (MAYAN/LILAC 平台, 与工程版相同)
+- **APCB**: 偏移 0x449320 (主), 0x81A320 (备份)
+
+### 13.4 APCB 对比
+
+| 指标 | 工程版 | 生产版 | 差异 |
+|------|--------|--------|------|
+| **大小** | 29.5 KB (0x75F4) | 46.5 KB (0xBA24) | +17.0 KB |
+| **版本字节** | 0x80000030 | 0x37000030 | 不同 |
+| **内存 SPD** | Samsung K3LKCKC@BM | Micron MT62F1G32D4DR / SK Hynix H9JCNNNCP3MLYR | 多厂商支持 |
+| **USB4 令牌** | ❌ 未找到 | ❌ 未找到 | 两者均无 |
+
+**额外 17KB 内容**: 生产版增加了更多内存 SPD 配置文件 (Micron + SK Hynix)，
+以及 `OPTB`/`GNBG`/`FCHG` 配置区块。USB4 启用不在 APCB 令牌层面。
+
+### 13.5 UEFI DXE 模块对比 (关键发现)
+
+DXE 模块总数: 工程版 **305 个** vs 生产版 **356 个** (差 51 个)
+
+#### 仅在生产版中的关键模块
+
+| 模块名 | 类型 | 功能 |
 |--------|------|------|
-| XHCI 扩展能力链 | 仅 USB 3.1，无 USB4 cap | 硅片级确认无 USB4 路由功能 |
-| USB4 NHI PCI 设备 | 不存在 (class 0880=0) | BIOS 未初始化 USB4 NHI 硬件 |
-| UCSI ACPI 设备 | 不存在 (PNP0CA0=0) | OS 无法管理 USB-C |
-| EC UCSI 邮箱 | 不实现 | DSDT override 无法绕过 |
-| BIOS USB4 设置 | 不存在 | think-lmi 无可用选项 |
-| Thunderbolt 域 | 空 | 无 USB4 隧道 |
+| **`UcsiDriver`** | DXE driver (2.3 KB) | ⭐ **UCSI 连接器接口** — 向 OS 暴露 USB-C 端口管理 |
+| `AmdCpmSoundWireDxe` | DXE driver | SoundWire 音频总线 |
+| `AmdCpmPlatformOscTableInstall` | DXE driver | _OSC 方法安装 (USB4 PCIe negotiation) |
+| `FprSynapticsPrometheusDriver` | DXE driver | Synaptics 指纹 BIOS 级驱动 |
+| `EcFwUpdateDxe` | DXE driver | EC 固件更新能力 |
+| `RZ616_MtkWiFiDex` / `WCN6855` | DXE driver | WiFi 网卡 PXE 驱动 |
+| `SecureBIOCamera_*` | DXE driver (×4) | 安全摄像头驱动 (Realtek/Sonix/Sunplus) |
+| `TlsDxe` / `FidoDxe` | DXE driver | TLS 网络 + FIDO 认证 |
+| `MemTest` | DXE driver | 内存测试 |
 
-### 唯一解决方案: 更新 BIOS + EC 固件
+#### AmdUsb4Dxe 对比
 
-工程 BIOS `N3GET04WE (0.04f)` + EC `0.15` 缺少 USB4 初始化代码。
-量产 BIOS (`N3GETxxW`，无"E"后缀) 会：
-1. 在 PCIe 初始化时启用 USB4 NHI 硬件块
-2. 提供 UCSI ACPI 设备 (PNP0CA0)
-3. EC 实现 UCSI 邮箱协议
-4. 配置 Type-C mux 支持 SuperSpeed + Alt Mode
+```
+两个固件均包含 AmdUsb4Dxe (GUID: 051274F4-A724-4732-BE00-82793A3D499A)
+
+工程版: 127 KB PE32 (5 PE sections) — 可能为 debug build
+生产版: 103 KB PE32 (4 PE sections) — release build
+构建路径: c:\users\qq\desktop\gen1\Amd\AgesaModulePkg\Usb4\AmdUsb4Dxe\
+
+功能: USB4 Host Router 初始化 + Pre-OS Connection Manager
+      包含: NHI BAR0 检测、Router Init、内存分配、PCI 枚举回调
+```
+
+#### 仅在工程版中的模块
+
+| 模块名 | 说明 |
+|--------|------|
+| `AcpiS3SaveDxe` | S3 睡眠保存 (已整合到其他模块) |
+| `AmdCpmSensorFusionDxe` | 传感器融合 (已替换) |
+| `AmdCpmZeroPowerOddDxe` | 零功耗光驱 (Z13 无光驱) |
+| `DataHubDxe` / `DatahubStatusCodeHandlerDxe` | 调试用数据中心 |
+
+### 13.6 UcsiDriver 详细分析
+
+```
+GUID: 15B985C5-7103-4F35-B59D-2235FC5F3FFE
+大小: 2,240 bytes (极小的 shim 驱动)
+构建: c:\...\Phoenix\Modules\Lcfc\000\LcfcPkg\Ucsi\Dxe\UcsiDriver
+来源: LCFC (Lenovo ODM) 定制模块
+
+依赖:
+  FFE06BDD-6107-46A6-7BB2-5A9C7EC5275C (AcpiSdt Protocol)
+  AND
+  13A3F0F6-264A-3EF0-F2E0-DEC512342F34 (PciRootBridgeIo Protocol)
+
+作用:
+  在 UEFI DXE 阶段安装 UCSI ACPI 设备 (PNP0CA0)
+  建立 EC ↔ ACPI ↔ OS 的 UCSI 通信通道
+  使 ucsi_acpi 内核模块能发现并接管 USB-C 端口管理
+```
+
+### 13.7 EC 固件对比
+
+| 项目 | 工程 EC | 生产 EC (FL2) |
+|------|---------|--------------|
+| **版本** | 0.15 | N3GHT68W |
+| **大小** | 未知 (嵌入 SPI) | 320 KB |
+| **区域** | 1 | 2 (\_EC1: 320KB + \_EC2: 316KB) |
+| **版权** | — | LENOVO 2005, 2018 |
+| **UCSI 邮箱** | 未实现 | ✅ 完整实现 |
+
+### 13.8 USB4/USB-C 不工作的完整原因链 (修正版)
+
+```
+工程 BIOS N3GET04WE 问题链:
+                                                        
+ ┌──────────────────────────────────────────────────┐   
+ │  1. UcsiDriver 缺失                              │  ← 生产版新增
+ │     └─ ACPI namespace 无 PNP0CA0 设备             │
+ │        └─ ucsi_acpi 模块无设备可绑定              │
+ │           └─ /sys/class/typec/ 为空               │
+ │              └─ USB-C 端口管理完全由 PHCM 独立处理 │
+ ├──────────────────────────────────────────────────┤
+ │  2. AmdUsb4Dxe 存在但无法初始化                    │
+ │     └─ 读取 USB4BAR0 返回 0xFFFFFFFF              │
+ │        └─ USB4 NHI PCI 设备未被 AGESA 枚举         │
+ │           └─ AGESA ABL 阶段跳过 USB4 初始化        │
+ │              └─ APCB 中无 USB4 启用令牌 (仍然成立)  │
+ ├──────────────────────────────────────────────────┤
+ │  3. EC 0.15 过于原始                               │ ← 生产 EC = N3GHT68W
+ │     └─ 不实现 UCSI 邮箱命令                        │
+ │        └─ 即使有 UcsiDriver 也无法通信             │
+ └──────────────────────────────────────────────────┘
+```
+
+### 13.9 重要发现
+
+1. **APCB 中并无显式 USB4 令牌** — 生产版和工程版的 APCB 都没有找到 USB4 启用令牌。
+   USB4 的启用可能不是通过 APCB 令牌，而是通过其他机制（如 AGESA 版本差异、
+   DXE 驱动链初始化顺序、或 EC 协商触发）。
+
+2. **关键差异是 UcsiDriver** — 这个仅 2.3KB 的 LCFC/Lenovo shim 驱动是连接
+   EC UCSI 邮箱和 OS typec 子系统的桥梁。工程版完全缺失此驱动。
+
+3. **AmdUsb4Dxe 在两个固件中都存在** — 但工程版是 debug build (127KB, 5 sections),
+   生产版是 release build (103KB, 4 sections)。两者都依赖相同的 PCI enumeration protocol。
+
+4. **生产版多 51 个 UEFI 模块** — 涵盖 UCSI、WiFi、指纹、安全摄像头、FIDO、TLS 等
+   完整的平台功能。工程版是"最小启动"配置。
+
+### 13.10 修复路径 (更新)
+
+| 路径 | 可行性 | 效果预评 |
+|------|--------|---------|
+| **刷写生产 BIOS + EC** | ✅ 最佳 | USB4 + UCSI + 完整平台功能 |
+| **仅提取 UcsiDriver 注入 SPI** | ⚠️ 极难 | UCSI 可能工作，但 USB4 NHI 仍无法枚举 |
+| **ACPI 手动添加 PNP0CA0** | ⚠️ 需 EC 配合 | EC 0.15 不支持 UCSI 邮箱，无效 |
+| **修改 APCB** | ❓ 不确定 | APCB 差异主要是内存配置，不是 USB4 开关 |
+
+**推荐**: 使用联想 Bootable CD 或 SPI 编程器刷写生产 BIOS (N3GET74W) + EC (N3GHT68W)。
+需同时更新 BIOS 和 EC，仅更新一个可能导致不兼容。

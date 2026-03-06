@@ -20,11 +20,11 @@
 
 | # | 问题 | 原因 | 修复方案 |
 |---|------|------|---------|
-| 5 | USB-C Hub 降级为 USB 2.0 | BIOS 缺少 UCSI + USB4 NHI | 需升级量产 BIOS |
-| 6 | USB4/Thunderbolt 完全不可用 | 工程 BIOS 未初始化 NHI 硬件 | 需升级量产 BIOS |
+| 5 | USB-C Hub 降级为 USB 2.0 | BIOS 缺少 UcsiDriver + USB4 NHI 未枚举 | 需升级量产 BIOS |
+| 6 | USB4/Thunderbolt 完全不可用 | 工程 BIOS AGESA 未初始化 USB4 | 需升级量产 BIOS |
 | 7 | 指纹读取器频繁重置 | USB autosuspend 相关 | 待排查 |
 
-> 详细分析见 [docs/usb4_analysis.md](docs/usb4_analysis.md)
+> 详细分析见 [docs/usb4_analysis.md](docs/usb4_analysis.md)（含第 13 节：生产 BIOS 对比）
 >
 > 文件时间线与结构清单见 [docs/project_inventory.md](docs/project_inventory.md)
 
@@ -55,9 +55,15 @@ acpi-fixup/
 ├── firmware/                 ← 固件相关
 │   ├── acpi/
 │   │   └── dsdt.aml                中间构建产物
-│   └── spi_dump/                   SPI 只读 dump 输出目录（已忽略）
+│   ├── spi_dump/                   SPI 只读 dump 输出目录（已忽略）
+│   └── bios_update/                生产 BIOS 提取
+│       └── extracted/Flash/N3GET74W/
+│           ├── $0AN3G00.FL1        主 BIOS (33 MB)
+│           └── $0AN3G00.FL2        EC 固件 (320 KB)
 ├── scripts/                  ← 自动化脚本
-│   └── spi_dump.sh                SPI 只读 dump 脚本
+│   ├── spi_dump.sh                SPI 只读 dump 脚本
+│   ├── parse_spi.py               AMD PSP 目录解析
+│   └── analyze_spi_usb4.py        USB4/UCSI SPI 深度分析
 └── archive/                  ← 归档（可安全删除）
     ├── copilot-session-*.md        Copilot 调试对话记录
     ├── Fixing ACPI Lid and USB.md  聊天对话导出
