@@ -962,7 +962,7 @@ SSDT 模板包含 (推断):
 | **刷写生产 BIOS + EC** | ✅ 最佳 | USB4 + UCSI + 完整平台功能 |
 | **仅提取 UcsiDriver + SSDT 注入** | ⚠️ 极难 | 需同时注入 4 个 FFS 文件到 FV，且 EC 0.15 不支持 UCSI 邮箱 |
 | **ACPI 手动添加 PNP0CA0** | ⚠️ 需 EC | 驱动逻辑需 EC 实现 UCSI 邮箱读写 + SCI 中断，EC 0.15 无此功能 |
-| **修改 APCB** | ❌ 无效 | APCB 差异证实为内存 SPD 配置，非 USB4 开关 |
+| **修改 APCB** | ⚠️ 部分可能 | GNBG 组中发现明确的端口 USB4 使能位差异（详见 §14） |
 
 **推荐**: 使用联想 Bootable CD 或 SPI 编程器刷写生产 BIOS (N3GET74W) + EC (N3GHT68W)。
 需同时更新 BIOS 和 EC，仅更新一个可能导致不兼容。
@@ -970,3 +970,275 @@ SSDT 模板包含 (推断):
 > **逆向工程结论**: UcsiDriver 的 48 字节 UCSI 邮箱需要 EC 主动参与 —
 > EC 必须监听 CTRL 寄存器写入、执行 UCSI 命令、更新 CCI 状态位、
 > 并通过 GPIO/SCI 通知 OS。这不是纯软件可以绕过的限制。
+
+## 14. 实机探测与 AMD SMN 寄存器扫描 (2026-03-06)
+
+> 此章节基于运行中系统的实时寄存器读取，不是固件二进制分析。
+
+### 14.1 EC 固件探测
+
+使用自定义 `ec_probe.py` 工具（通过 /dev/port 直接访问 EC I/O 端口 0x62/0x66）：
+
+| 测试 | 结果 |
+|------|------|
+| EC 寄存器 dump (256B) | ✅ 成功, 与 ec_sys 一致 |
+| EC 固件版本 | `N3GHT15W` (寄存器 0xF0-0xF7) |
+| 扩展读取 0xA0-0xAF | ❌ 无响应 (5种协议变体全部超时) |
+| 厂商命令 0xCE/0xCF | ❌ 状态 0x08 (CMD set), 无数据返回 |
+| **结论** | 工程 EC 不支持扩展命令和厂商命令 |
+
+**EC 寄存器空间关键字段:**
+```
+A0-AF: 00 00 00 00 FF FF 00 00  00 00 00 00 FF FF 00 00  ← 两端口, 0xFFFF = 未枚举
+F0-F7: 4E 33 47 48 54 31 35 57  = "N3GHT15W"
+```
+
+### 14.2 USB 设备拓扑（实时）
+
+```
+Bus 1 (XHC0 HS):  Hub 5059:5058 @480M → Billboard 5059:5059 + Microchip DFU @12M + Camera @480M
+Bus 2 (XHC0 SS):  ← 完全空闲
+Bus 3 (XHC1 HS):  Intel L830 WWAN @480M + Synaptics Fingerprint @12M
+Bus 4 (XHC1 SS):  ← 完全空闲
+Bus 5 (XHC2 HS):  IR Camera @480M
+```
+
+**Billboard 设备详情:** wSVID=0xFF01, iAlternateModeSetting="Alt Mode configuration successful", bmConfigured=0x03。  
+EC 的 PD 状态机 **正确完成了 DP Alt Mode 协商**，但 PHY mux 未路由 SS 信号。
+
+### 14.3 USB4 XHCI PORTSC 寄存器
+
+通过 /dev/mem 直接读取 XHCI 内存映射寄存器：
+
+| 控制器 | 端口 | 地址偏移 | PORTSC | 解码 |
+|--------|------|----------|--------|------|
+| XHC0 | HS01 | +0x480 | 0x0A0002A0 | RxDetect, 无设备 |
+| XHC0 | HS02 | +0x490 | 0x0C000E63 | U3, HS, 已连接 |
+| XHC0 | HS03 | +0x4A0 | 0x0C000663 | U3, FS, 已连接 |
+| XHC0 | HS04 | +0x4B0 | 0x0C000E63 | U3, HS, 已连接 |
+| XHC0 | **SS01** | +0x4C0 | **0x0A0002A0** | **RxDetect, 无SS信号** |
+| XHC0 | **SS02** | +0x4D0 | **0x0A0002A0** | **RxDetect, 无SS信号** |
+| XHC1 | SS03-SS04 | | 0x0A0002A0 | 同样 RxDetect |
+
+### 14.4 AMD SMN 寄存器深度扫描
+
+通过 PCI Root Complex (0000:00:00.0) SMN_INDEX/SMN_DATA (offset 0x60/0x64) 访问：
+
+#### USB4 PHY (3个实例，配置相同)
+
+| SMN 地址 | 值 | 含义 |
+|----------|-----|------|
+| 0x16C00000 | 0x01100020 | PHY #0 存在, 已上电 |
+| 0x16C10000 | 0x01100020 | PHY #1 存在, 已上电 |
+| 0x16C20000 | 0x01100020 | PHY #2 存在, 已上电 |
+| 0x16C00420 | 0x0A0002A0 | **Port 0: RxDetect** (与 XHCI SS01 一致) |
+| 0x16C00430 | 0x0C000E63 | Port 1: U3, HS, Connected |
+| 0x16C00460 | 0x0A0002A0 | **Port 4: RxDetect** |
+| 0x16C00470 | 0x0A0002A0 | **Port 5: RxDetect** |
+| 0x16C00494 | 0x20425355 | "USB " — USB 能力标识符 |
+| 0x16C004A4 | 0x20425355 | "USB " — SS端口#1 能力 |
+| 0x16C004C4 | 0x20425355 | "USB " — SS端口#2 能力 |
+| 0x16C00500 | 0x000F0000 | PHY 配置 (非零 = 已初始化) |
+
+PHY SERDES 初始化表 (0xB000-0xB55C) 完整存在，校准数据 (0xC100-0xC700) 正常。
+
+#### USB IP Discovery
+
+| SMN 地址 | 值 | 含义 |
+|----------|-----|------|
+| 0x16600000 | 0xFFFFFFFF | **USB IP Discovery 完全禁用/不可访问** |
+
+#### USB4 Router
+
+| SMN 地址 | 值 | 含义 |
+|----------|-----|------|
+| 0x16D20000 | 0x000054CD | Router 存在, 部分初始化 |
+| 0x16D20008 | 0x00000070 | 配置大小 |
+| 0x16D20080 | 0x00004000 | 路由表 |
+| 0x16D20090-0xF0 | 非零 | 链路参数 (等化, CDR 等) |
+| 0x16D20100 | 0x00000080 | 端口 A 配置 |
+| 0x16D20104 | 0x00000080 | 端口 B 配置 |
+
+#### FCH USB 控制器 (3个实例)
+
+| SMN 地址 | 值 | 含义 |
+|----------|-----|------|
+| 0x16ED0000 | 0x01100020 | FCH USB #0 存在 |
+| 0x16EE0000 | 0x01100020 | FCH USB #1 存在 |
+| 0x16EF0000 | 0x01100020 | FCH USB #2 存在 |
+
+#### SMU 邮箱
+
+| SMN 地址 | 值 | 含义 |
+|----------|-----|------|
+| 0x03B10528 | 0x0000001C | MP1_SMN_C2PMSG_40 (SMU 响应寄存器) |
+| 0x03B10570 | 0x00000001 | MP1_SMN_C2PMSG_58 (SMU 就绪标志) |
+
+**关键结论: USB4 PHY 硬件存在且上电, 但 USB IP Discovery 禁用 → AGESA/APCB 级配置缺失。**
+
+### 14.5 PCI 拓扑
+
+```
+-[0000:00]-+-00.0  Root Complex (SMN Access)
+           +-01.1  → Bus 01 (空! NHI 应在此)  ← 有 I/O 和 Memory 分配但无设备
+           +-01.2  → Bus 02 (WiFi: QCNFA765)
+           +-02.4  → Bus 03 (NVMe: YMTC)
+           +-08.1  → Bus 04 (内部)
+           |  04:00.3  XHC0 [1022:161a] "Rembrandt USB4 XHCI controller #1"
+           |  04:00.4  XHC1 [1022:161b] "Rembrandt USB4 XHCI controller #2"
+           +-08.3  → Bus 05
+           |  05:00.0  XHC2 [1022:161c] "Rembrandt USB4 XHCI controller #7"
+```
+
+**Bus 01 分配了资源但为空** — 这是 USB4 NHI 设备应该出现的位置。
+Root port 00:01.1 → secondary bus 01, 有 I/O (2000-2fff) 和 Memory (d0200000-d03fffff) 分配。
+
+### 14.6 Thunderbolt 和 TypeC 驱动状态
+
+手动加载后：
+
+```
+thunderbolt           610304  1 typec        ← 模块加载成功
+typec_ucsi             77824  1 ucsi_acpi    ← UCSI 驱动加载
+ucsi_acpi              12288  0              ← ACPI 绑定无设备
+```
+
+- `/sys/bus/thunderbolt/devices/` — 空 (无 NHI → 无法发现域)
+- `/sys/class/typec/` — 空 (无 UCSI 设备 → 无端口注册)
+- dmesg: `ACPI: bus type thunderbolt registered` — 仅此一行
+
+## 15. APCB 深度对比分析
+
+### 15.1 APCB 提取
+
+| 来源 | SPI dump 偏移 | 大小 | Unique ID |
+|------|-------------|------|-----------|
+| 工程版主 APCB | 0x449000 | 0x75F4 (30,196B) | 0x269C |
+| 量产版主 APCB | 0x449320 | 0xBA24 (47,652B) | 0x2249 |
+
+量产 APCB 比工程版大 **17,456 字节 (+58%)**，主要差异在 MEMG 组。
+
+### 15.2 APCB 内部结构
+
+```
+Offset  Engineering        Production         含义
+0x0000  APCB header        APCB header        相同版本 0x0080
+0x0020  ECB2 header        ECB2 header        完全相同
+0x007C  "BCBA"             "BCPA"             Board Config 标识不同
+0x0080  PSPG (0x4C)        PSPG (0x4C)        PSP组: 相同
+0x00CC  MEMG (0x6CD8)      MEMG (0xB0A8)      内存组: 量产多 0x43D0 字节
+0x6DA4  GNBG (0x270)       GNBG (0x270)       北桥组: ★ 关键差异
+0x7014  FCHG (0x80)        FCHG (0x90)        FCH组: 量产多 0x10 字节
+0x7094  TOKN (0x560)       TOKN (0x5B0)       Token组: 量产多 0x50 字节
+```
+
+### 15.3 GNBG (北桥组) 关键差异 ★★★
+
+GNBG 包含 PCIe/USB4 端口配置。两者大小相同 (0x270) 但有 **4处端口级差异**:
+
+```
+偏移    工程版           量产版           差异
++0xA4   00 00 00 00     00 00 30 00     端口1: +0x3000 → USB4 模式使能?
++0xB4   00 01 10 00     00 01 30 00     端口2: 0x10→0x30 (bit5=1 → NHI 使能)
++0xC4   00 01 10 00     02 01 30 20     端口3: 0x10→0x30 + byte0=0x02, byte3=0x20
++0xD4   00 01 10 00     00 01 30 00     端口4: 0x10→0x30
+```
+
+**模式: 量产版在每个端口配置的 byte14 中一致性地将 bit5 (0x20) 置1。**
+- 工程版: `0x10` = 仅 XHCI 模式
+- 量产版: `0x30` = XHCI + USB4/NHI 模式
+
+端口3 额外设置 byte12=0x02 和 byte15=0x20，可能指定 NHI 设备映射。
+
+### 15.4 FCHG (FCH组) 差异
+
+| 偏移 | 字段 | 工程 | 量产 | 含义 |
+|------|------|------|------|------|
+| +0x24 | byte4 | 0x00 | 0x01 | **USB SuperSpeed 使能** (0→1) |
+| +0x2C | byte2-3 | 0x80 0x10 | 0x7F 0x0F | 端口使能掩码调整 |
+| +0x58 | word | 0x0010 | 0x02FF | USB 控制器配置 |
+| +0x64 | dword | 0xFE00D000 | 0xFEEC2000 | MMIO 基地址不同 |
+| +0x7C | word | 0x1002 | 0x0000 | 调试/保留字段 |
+| +0x80-8F | | (不存在) | FE C2 02 00..01 | **额外 USB4 MMIO 映射** |
+
+### 15.5 TOKN (Token组) 差异
+
+| 类别 | 数量 | 详情 |
+|------|------|------|
+| 仅量产 | 12 | 包含可能的 USB4 功能使能 token |
+| 仅工程 | 2 | 0x190305DF=0, 0x5B10198C=0 |
+| 值不同 | 11 | 重要: 0x4367CBD2 (0→1), 0x4967F4FC (0→1), 0xFEDB01F8 (0→1) |
+| 值相同 | 151 | 核心平台配置一致 |
+
+关键 token 变化:
+- **0x4367CBD2**: 0→1 (可能: USB4 NHI Enable)
+- **0x4967F4FC**: 0→1 (可能: USB4 Connection Manager)
+- **0xFEDB01F8**: 0→1 (可能: USB4 PCIe Tunneling)
+- **0x596663AC**: 0xFFFFFFFF→0x0002001B (USB 控制器端口映射)
+- **0x4DBEA2A3**: 2→0 (PCIe 根端口模式)
+
+## 16. 综合诊断结论
+
+### 16.1 根因确认
+
+工程版 BIOS (N3GET04WE) 的 APCB 配置中：
+
+1. **GNBG 端口配置缺少 USB4 模式位** — bit5 未设置, 端口仅配置为 XHCI-only
+2. **FCHG 缺少 SuperSpeed 使能** — byte +0x24 = 0x00 (量产 = 0x01)
+3. **缺少 USB4 NHI 使能 Token** — 至少 3 个关键 token 为 0 (量产为 1)
+4. **EC N3GHT15W 不支持 UCSI** — 即使 PHY 启用也无法做 Alt Mode
+5. **Bus 01 无 NHI 设备** — AGESA 未枚举 USB4 NHI PCI function
+
+### 16.2 硬件状态图
+
+```
+                      ┌─────────────────────────────────────────┐
+                      │        AMD Rembrandt SoC                │
+                      │                                         │
+  USB-C Port 1 ───→  │  USB4 PHY #0 ✅存在 ✅上电              │
+  USB-C Port 2 ───→  │  USB4 PHY #1 ✅存在 ✅上电              │
+                      │  USB4 PHY #2 ✅存在 ✅上电              │
+                      │                                         │
+                      │  USB4 Router ⚠️部分初始化               │
+                      │  USB IP Discovery ❌ 0xFFFFFFFF          │
+                      │  USB4 NHI ❌ PCI设备未枚举 (Bus 01空)   │
+                      │                                         │
+                      │  XHC0 ✅工作 (仅HS)   XHC1 ✅工作 (仅HS)│
+                      │  SS端口 ❌全部 RxDetect                  │
+                      │                                         │
+                      │  PHY SERDES ✅初始化表存在               │
+                      │  PHY 校准数据 ✅存在                     │
+                      │  PHY Mux ❌ 未配置SS路由                 │
+                      └─────────────────────────────────────────┘
+                                        │
+                      EC (N3GHT15W): PD ✅ (电源/DP协商正常)
+                                    UCSI ❌ (命令不支持)
+                                    扩展读 ❌ (0xA0-0xAF超时)
+```
+
+### 16.3 修复路径重新评估
+
+| 路径 | 可行性 | 风险 | 效果 |
+|------|--------|------|------|
+| **A: SPI 刷写量产 BIOS+EC** | ✅ 最佳 | ⚠️ 已知变砖风险 | 完整 USB4 |
+| **B: 仅修改 APCB GNBG 位** | ⚠️ 理论可行 | 中等 | SS 可能工作, 无 UCSI |
+| **C: 运行时 SMN 写入 USB4 位** | ❌ 不可行 | PHY mux 需 AGESA 初始化序列 | — |
+| **D: SMU 邮箱命令启用 USB4** | ❓ 未验证 | 可能安全 | 需研究 SMU 消息 |
+
+#### 路径 B 详解: 仅修改 APCB
+
+理论上可以通过 SPI 编程器仅修改 APCB 区域：
+
+1. 将 GNBG 端口配置的 byte14 从 `0x10` 改为 `0x30` (4处)
+2. 将 FCHG +0x24 从 `0x00` 改为 `0x01`
+3. 添加缺失的 token (0x4367CBD2=1, 0x4967F4FC=1, 0xFEDB01F8=1)
+
+**潜在收益**: AGESA 可能在下次启动时枚举 NHI、配置 PHY mux、启用 SS 信号。
+
+**限制**: 
+- EC 仍为 N3GHT15W, 不支持 UCSI → 无 Alt Mode/Power Role 管理
+- 可能需要同步修改 DSDT (添加 NHI 设备下的子设备)
+- Token ID 是哈希值, 无法确认具体功能
+- APCB 有校验和, 需重新计算
+
+> **警告**: 修改 SPI Flash 需要 SPI 编程器和完整备份。操作失误会变砖。

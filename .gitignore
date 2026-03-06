@@ -4,3 +4,4 @@ firmware/spi_dump/*.log
 # Production BIOS extraction (large binaries)
 firmware/bios_update/extracted/
 firmware/bios_update/iso_extract/
+n3gur27w.iso
