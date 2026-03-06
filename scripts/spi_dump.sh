@@ -14,6 +14,62 @@ DUMP_DIR="$(cd "$(dirname "$0")/.." && pwd)/firmware/spi_dump"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 DUMP_FILE="${DUMP_DIR}/bios_dump_${TIMESTAMP}.bin"
 LOG_FILE="${DUMP_DIR}/flashrom_${TIMESTAMP}.log"
+FLASHROM_PROGRAMMER="internal:laptop=this_is_not_a_laptop"
+FLASH_CHIP="${FLASH_CHIP:-}"
+
+select_flash_chip() {
+    local probe_output="$1"
+    local -a detected_chips=()
+    local line
+
+    while IFS= read -r line; do
+        detected_chips+=("$line")
+    done < <(printf '%s\n' "$probe_output" | awk -F'"' '/Found .* flash chip / {print $2}' | awk '!seen[$0]++')
+
+    if [ ${#detected_chips[@]} -eq 0 ]; then
+        echo "错误: 未从探测输出中识别到闪存芯片型号。"
+        echo "查看日志: $LOG_FILE"
+        exit 1
+    fi
+
+    if [ ${#detected_chips[@]} -eq 1 ]; then
+        FLASH_CHIP="${detected_chips[0]}"
+        echo "✓ 自动识别闪存芯片: $FLASH_CHIP"
+        return
+    fi
+
+    echo ""
+    echo "检测到多个匹配的芯片定义:"
+    local i
+    for i in "${!detected_chips[@]}"; do
+        echo "  [$((i + 1))] ${detected_chips[$i]}"
+    done
+
+    if [ -n "$FLASH_CHIP" ]; then
+        for line in "${detected_chips[@]}"; do
+            if [ "$line" = "$FLASH_CHIP" ]; then
+                echo "✓ 使用环境变量 FLASH_CHIP=$FLASH_CHIP"
+                return
+            fi
+        done
+        echo "错误: FLASH_CHIP=$FLASH_CHIP 不在探测到的候选列表中。"
+        exit 1
+    fi
+
+    echo ""
+    echo "默认选择 [1] W25Q256JW。"
+    echo "说明: 当前操作是只读 dump，两种定义容量一致；默认优先选择常见的 Q 系列定义。"
+    read -p "请选择芯片定义 [1-${#detected_chips[@]}] (默认 1): " -r CHIP_INDEX
+    CHIP_INDEX=${CHIP_INDEX:-1}
+
+    if ! [[ "$CHIP_INDEX" =~ ^[0-9]+$ ]] || [ "$CHIP_INDEX" -lt 1 ] || [ "$CHIP_INDEX" -gt ${#detected_chips[@]} ]; then
+        echo "错误: 无效的选择: $CHIP_INDEX"
+        exit 1
+    fi
+
+    FLASH_CHIP="${detected_chips[$((CHIP_INDEX - 1))]}"
+    echo "✓ 已选择芯片定义: $FLASH_CHIP"
+}
 
 # 检查是否为 root
 if [ "$(id -u)" -ne 0 ]; then
@@ -49,11 +105,17 @@ fi
 
 echo ""
 echo "[1/3] 探测闪存芯片..."
-flashrom -p internal:laptop=this_is_not_a_laptop 2>&1 | tee "$LOG_FILE"
+probe_status=0
+probe_output=$(flashrom -p "$FLASHROM_PROGRAMMER" 2>&1 | tee "$LOG_FILE") || probe_status=$?
+select_flash_chip "$probe_output"
+
+if [ "$probe_status" -ne 0 ]; then
+    echo "注: 初次探测返回非零状态，常见原因是多芯片定义匹配；已改用明确芯片定义继续。"
+fi
 
 echo ""
-echo "[2/3] 读取闪存内容..."
-flashrom -p internal:laptop=this_is_not_a_laptop -r "$DUMP_FILE" 2>&1 | tee -a "$LOG_FILE"
+echo "[2/3] 读取闪存内容 ($FLASH_CHIP)..."
+flashrom -p "$FLASHROM_PROGRAMMER" -c "$FLASH_CHIP" -r "$DUMP_FILE" 2>&1 | tee -a "$LOG_FILE"
 
 if [ -f "$DUMP_FILE" ]; then
     SIZE=$(stat -c%s "$DUMP_FILE")
@@ -72,7 +134,7 @@ if [ -f "$DUMP_FILE" ]; then
     echo ""
     echo "[3/3] 验证 dump (二次读取对比)..."
     VERIFY_FILE="${DUMP_DIR}/bios_verify_${TIMESTAMP}.bin"
-    flashrom -p internal:laptop=this_is_not_a_laptop -r "$VERIFY_FILE" 2>&1 | tee -a "$LOG_FILE"
+    flashrom -p "$FLASHROM_PROGRAMMER" -c "$FLASH_CHIP" -r "$VERIFY_FILE" 2>&1 | tee -a "$LOG_FILE"
     
     if cmp -s "$DUMP_FILE" "$VERIFY_FILE"; then
         echo "✓ 验证通过! 两次读取完全一致。"
@@ -87,3 +149,4 @@ if [ -f "$DUMP_FILE" ]; then
 else
     echo "✗ Dump 失败。查看日志: $LOG_FILE"
 fi
+

@@ -1,0 +1,2 @@
+firmware/spi_dump/*.bin
+firmware/spi_dump/*.log

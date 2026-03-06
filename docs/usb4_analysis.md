@@ -399,8 +399,12 @@ os.close(fd)
 - **可行性**: ⚠️ 高风险，但理论上可行
 - PSP 的 `rpmc_spirom_available=1` 表明 SPI ROM 可访问
 - 可使用 `flashrom` 或内核 SPI 框架 dump BIOS
+- 实测 `flashrom` 已探测到 32MB Winbond 芯片，候选定义为 `W25Q256JW` / `W25R256JW`
+- 由于 `flashrom` 返回多定义匹配，读取时必须显式指定 `-c <chipname>`
 - 需要 AMD AGESA/PSP 逆向工程知识来修改 USB4 初始化
 - **极高风险**: 变砖可能性大
+
+当前仓库中的 [scripts/spi_dump.sh](../scripts/spi_dump.sh) 已加入候选芯片选择逻辑，默认优先 `W25Q256JW`，并在二次读取时执行一致性校验。
 
 #### 方案 F: fwupd 尝试更新个别组件
 - **可行性**: ✅ 部分可行

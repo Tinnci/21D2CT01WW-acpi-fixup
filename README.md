@@ -25,6 +25,8 @@
 | 7 | 指纹读取器频繁重置 | USB autosuspend 相关 | 待排查 |
 
 > 详细分析见 [docs/usb4_analysis.md](docs/usb4_analysis.md)
+>
+> 文件时间线与结构清单见 [docs/project_inventory.md](docs/project_inventory.md)
 
 ---
 
@@ -36,6 +38,7 @@ acpi-fixup/
 ├── docs/                     ← 文档
 │   ├── acpi_analysis_complete.md   合并后的完整分析文档
 │   ├── ACPI_FIXES_APPLIED.md       修复报告（部署记录）
+│   ├── project_inventory.md        文件时间线与结构清单
 │   ├── usb4_analysis.md            USB4/USB-C 降级根因分析
 │   ├── QUICK_REFERENCE.txt         快速参考卡（验证命令）
 │   └── thinkfan-setup-notes.md     ThinkFan 风扇配置
@@ -50,8 +53,11 @@ acpi-fixup/
 │   ├── dsdt_rollback.aml           回滚版编译结果
 │   └── acpi_override               /boot 引导覆盖文件（CPIO 格式）
 ├── firmware/                 ← 固件相关
-│   └── acpi/
-│       └── dsdt.aml                中间构建产物
+│   ├── acpi/
+│   │   └── dsdt.aml                中间构建产物
+│   └── spi_dump/                   SPI 只读 dump 输出目录（已忽略）
+├── scripts/                  ← 自动化脚本
+│   └── spi_dump.sh                SPI 只读 dump 脚本
 └── archive/                  ← 归档（可安全删除）
     ├── copilot-session-*.md        Copilot 调试对话记录
     ├── Fixing ACPI Lid and USB.md  聊天对话导出
@@ -85,6 +91,13 @@ sudo dmesg | grep "DSDT\|ACPI" | grep -i "error\|bug"
 lsusb -t                                    # USB 速度
 cat /proc/acpi/button/lid/*/state           # Lid 状态
 ```
+
+### 只读导出 SPI Flash
+```bash
+sudo bash scripts/spi_dump.sh
+```
+
+> 脚本会自动处理 `flashrom` 的多芯片匹配提示，并在读取前要求再次确认。
 
 ### 修改 DSDT 流程
 ```bash
