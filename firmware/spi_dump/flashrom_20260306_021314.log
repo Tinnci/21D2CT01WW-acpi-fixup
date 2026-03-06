@@ -1,0 +1,31 @@
+flashrom v1.7.0-devel (git:v1.6.0-78-g3e8003d6) on Linux 6.19.5-3-cachyos (x86_64)
+flashrom is free software, get the source code at https://flashrom.org
+
+No DMI table found.
+Found chipset "AMD FP4".
+Enabling flash write... OK.
+========================================================================
+You may be running flashrom on an unknown laptop. We could not
+detect this for sure because your vendor has not set up the SMBIOS
+tables correctly. Some internal buses have been disabled for
+safety reasons. You can enforce using all buses by adding
+  -p internal:laptop=this_is_not_a_laptop
+to the command line, but please read the following warning if you
+are not sure.
+
+Laptops, notebooks and netbooks are difficult to support and we
+recommend to use the vendor flashing utility. The embedded controller
+(EC) in these machines often interacts badly with flashing.
+See the manpage and https://flashrom.org/contrib_howtos/laptops_and_ec.html
+for details.
+
+If flash is shared with the EC, erase is guaranteed to brick your laptop
+and write may brick your laptop.
+Read and probe may irritate your EC and cause fan failure, backlight
+failure and sudden poweroff.
+You have been warned.
+========================================================================
+Found Winbond flash chip "W25Q256JW" (32768 kB, SPI) mapped at physical address 0x00000000fe000000.
+Found Winbond flash chip "W25R256JW" (32768 kB, SPI) mapped at physical address 0x00000000fe000000.
+Multiple flash chip definitions match the detected chip(s): "W25Q256JW", "W25R256JW"
+Please specify which chip definition to use with the -c <chipname> option.
