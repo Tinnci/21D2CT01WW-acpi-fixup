@@ -766,22 +766,134 @@ DXE 模块总数: 工程版 **305 个** vs 生产版 **356 个** (差 51 个)
 
 ### 13.6 UcsiDriver 详细分析
 
+**基本信息：**
 ```
-GUID: 15B985C5-7103-4F35-B59D-2235FC5F3FFE
-大小: 2,240 bytes (极小的 shim 驱动)
-构建: c:\...\Phoenix\Modules\Lcfc\000\LcfcPkg\Ucsi\Dxe\UcsiDriver
-来源: LCFC (Lenovo ODM) 定制模块
-
-依赖:
-  FFE06BDD-6107-46A6-7BB2-5A9C7EC5275C (AcpiSdt Protocol)
-  AND
-  13A3F0F6-264A-3EF0-F2E0-DEC512342F34 (PciRootBridgeIo Protocol)
-
-作用:
-  在 UEFI DXE 阶段安装 UCSI ACPI 设备 (PNP0CA0)
-  建立 EC ↔ ACPI ↔ OS 的 UCSI 通信通道
-  使 ucsi_acpi 内核模块能发现并接管 USB-C 端口管理
+GUID:   15B985C5-7103-4F35-B59D-2235FC5F3FFE
+大小:   2,240 bytes (PE32), .text=881 bytes, .data=584 bytes
+构建:   c:\users\qq\desktop\gen1\Build\PM\RELEASE_VS2015x86\X64\
+        Phoenix\Modules\Lcfc\000\LcfcPkg\Ucsi\Dxe\UcsiDriver\
+来源:   LCFC (联想 ODM) 定制模块, Phoenix UEFI 框架
 ```
+
+**DXE 依赖 (FFS DEPEX)：**
+```
+FFE06BDD-6107-46A6-7BB2-5A9C7EC5275C  (gEfiAcpiTableProtocolGuid)
+AND
+13A3F0F6-264A-3EF0-F2E0-DEC512342F34  (gEfiPciRootBridgeIoProtocolGuid)
+```
+
+**引用的 GUID 清单 (.data 区)：**
+| 偏移 | GUID | 用途 |
+|------|------|------|
+| 0x5E0 | `5B1B31A1-9562-11D2-8E3F-00A0C969723B` | gEfiLoadedImageProtocolGuid |
+| 0x5F0 | `11B34006-D85B-4D0A-A290-D5A571310EF7` | Phoenix/LCFC PCD 查询协议 |
+| 0x600 | `220E73B6-6BDB-4413-8405-B974B108619A` | Phoenix FV ACPI 模板协议 |
+| 0x610 | `FFE06BDD-6107-46A6-7BB2-5A9C7EC5275C` | gEfiAcpiTableProtocolGuid |
+| 0x620 | `7739F24C-93D7-11D4-9A3A-0090273FC14D` | EFI 配置表搜索 GUID |
+| 0x630 | `D1FFD9A6-6107-4E75-BF20-FF8F2FE58287` | UCSI SSDT 模板 A (非 3 端口) |
+| 0x640 | `4DB7E114-32E2-4324-9845-2B3FCDAF3AEC` | UCSI SSDT 模板 B (3 端口) |
+
+**完整执行流程 (Capstone x86-64 反汇编)：**
+
+```
+UefiMain(ImageHandle, SystemTable)        [0x2E0]
+ │
+ ├─ 保存全局指针: gBS, gRT, gST, gImageHandle
+ │
+ ├─ LocateConfigTable()                    [0x4AC]
+ │   └─ 遍历 SystemTable->ConfigurationTable[]
+ │      搜索 GUID {7739F24C-...}
+ │      缓存 VendorTable → gConfigData
+ │
+ ├─ MainUcsiLogic()                        [0x318]
+ │   │
+ │   ├─ GetPhoenixProtocol()               [0x470]
+ │   │   └─ LocateProtocol({11B34006-...}) → Phoenix PCD 协议
+ │   │
+ │   ├─ [protocol+8](0x241)               ← PCD token 查询
+ │   │   │  检查 USB-C 端口数量配置
+ │   │   │
+ │   │   ├─ if FALSE: 选择模板 A  → GUID {D1FFD9A6-...}  (UcsiAsl/Ucsi2PortsAsl)
+ │   │   └─ if TRUE:  选择模板 B  → GUID {4DB7E114-...}  (Ucsi3PortsAsl)
+ │   │
+ │   ├─ GetDeviceHandle()                  [0x518]
+ │   │   └─ HandleProtocol(gImageHandle, LoadedImageProtocol)
+ │   │      → 返回驱动所在 FV 的 DeviceHandle
+ │   │
+ │   ├─ OpenAcpiTemplate()                 [0x550]
+ │   │   └─ HandleProtocol(DeviceHandle, {220E73B6-...})
+ │   │      → 从 FV 加载所选 GUID 的 SSDT AML 模板
+ │   │      → 返回 (AmlTablePtr, TableSize, AcpiHandle)
+ │   │
+ │   ├─ AML 模式扫描 #1: OperationRegion(USBC,...)
+ │   │   │  逐字节搜索: 80 55 53 42 43 XX 0C DDDDDDDD 0A LL
+ │   │   │  即 AML: OpRegionOp "USBC" <Space> DWordPrefix <Offset> BytePrefix <Len>
+ │   │   │
+ │   │   ├─ AllocatePages(MaxAddress, ACPIMemoryNVS, 1)
+ │   │   │   → 分配 1 页 (4KB) ACPI NVS 内存 (< 4GB)
+ │   │   │
+ │   │   ├─ ZeroMem(buffer, 0x30)
+ │   │   │   → 清零 48 字节 = UCSI 数据结构大小
+ │   │   │
+ │   │   │   ┌─────────── UCSI 邮箱布局 (48 bytes) ───────────┐
+ │   │   │   │ +0x00  CCI    (4B)   连接器能力指示符          │
+ │   │   │   │ +0x04  CTRL   (8B)   控制寄存器                │
+ │   │   │   │ +0x0C  MGI    (16B)  消息输入                  │
+ │   │   │   │ +0x1C  MGO    (16B)  消息输出                  │
+ │   │   │   │ +0x2C  VER    (2B)   UCSI 版本                 │
+ │   │   │   │ +0x2E  RSV    (2B)   保留                      │
+ │   │   │   └───────────────────────────────────────────────┘
+ │   │   │
+ │   │   ├─ 补丁 [rdi+7] = allocated_address   (DWord 偏移)
+ │   │   └─ 补丁 [rdi+0xC] = 0x30              (长度 = 48)
+ │   │
+ │   ├─ AML 模式扫描 #2: Name(RBUF,...)
+ │   │   │  搜索: 08 52 42 55 46 ... 55AA55AA
+ │   │   │  即 AML: NameOp "RBUF" ... DWordConst 0x55AA55AA
+ │   │   │
+ │   │   └─ 补丁 0x55AA55AA → allocated_address
+ │   │      (ResourceTemplate DWordMemory 基址)
+ │   │
+ │   └─ LocateProtocol(gEfiAcpiTableProtocolGuid)
+ │      └─ InstallAcpiTable(patchedSSDT, tableSize, &tableKey)
+ │         → 将补丁后的 SSDT 安装到 ACPI namespace
+ │
+ └─ return EFI_SUCCESS
+```
+
+**伴随 SSDT 模板 (同 FV 内)：**
+```
+FFS #291: UcsiDriver          (PE32 DXE 驱动)
+FFS #292: Ucsi3PortsAsl       (3 端口 SSDT 模板, GUID {4DB7E114-...})
+FFS #293: UcsiAsl             (通用 SSDT 模板)
+FFS #294: Ucsi2PortsAsl       (2 端口 SSDT 模板, GUID {D1FFD9A6-...})
+```
+
+SSDT 模板包含 (推断):
+- `Device(\_SB.UCSI)` 定义, `_HID = "PNP0CA0"`
+- `OperationRegion(USBC, SystemMemory, <占位偏移>, <占位长度>)`
+- `Field(USBC, ...)` 映射 CCI/CTRL/MGI/MGO/VER 字段
+- `Name(RBUF, ResourceTemplate(){ DWordMemory(...0x55AA55AA...) })`
+- `Method(_CRS)` 返回 RBUF
+- `Method(_DSM)` 实现 UCSI 功能接口
+
+**辅助函数：**
+| 地址 | 函数 | 功能 |
+|------|------|------|
+| 0x260 | CopyMem | 内存拷贝 (支持重叠) |
+| 0x2A0 | ZeroMem | 内存清零 |
+| 0x2C0 | CompareMem | 内存比较 |
+| 0x470 | GetPhoenixProtocol | LocateProtocol 缓存包装 |
+| 0x4AC | LocateConfigTable | 搜索 EFI 配置表 |
+| 0x518 | GetDeviceHandle | 获取驱动所在 FV 句柄 |
+| 0x550 | OpenAcpiTemplate | 从 FV 加载 SSDT 模板 |
+
+**关键技术洞察：**
+- 这是一个 **运行时 ACPI 表补丁器**，不是传统意义上的设备驱动
+- UCSI 共享内存通过 `AllocatePages(EfiACPIMemoryNVS)` 动态分配
+- 使用字节扫描 AML 并原地修补占位符地址 — 标准 Phoenix BIOS 做法
+- PCD token 0x241 (577) 决定端口数量模板选择 (ThinkPad Z13 为 2 端口)
+- OEM ID 嵌入 "INTEL " — 表明此 SSDT 框架源自 Intel UCSI 参考实现
 
 ### 13.7 EC 固件对比
 
@@ -823,23 +935,38 @@ GUID: 15B985C5-7103-4F35-B59D-2235FC5F3FFE
    USB4 的启用可能不是通过 APCB 令牌，而是通过其他机制（如 AGESA 版本差异、
    DXE 驱动链初始化顺序、或 EC 协商触发）。
 
-2. **关键差异是 UcsiDriver** — 这个仅 2.3KB 的 LCFC/Lenovo shim 驱动是连接
-   EC UCSI 邮箱和 OS typec 子系统的桥梁。工程版完全缺失此驱动。
+2. **UcsiDriver 是运行时 ACPI 表补丁器** — 经完整逆向工程确认，这个 2.3KB 的驱动
+   并非传统设备驱动，而是:
+   - 从同 FV 加载预编译 SSDT 模板 (含 PNP0CA0 设备定义)
+   - 动态分配 48 字节 ACPI NVS 内存作为 UCSI 邮箱
+   - 字节扫描 AML 并补丁 OperationRegion(USBC) 偏移和 Name(RBUF) 地址
+   - 通过 EFI_ACPI_TABLE_PROTOCOL 安装补丁后的 SSDT
+   - 根据 PCD token 0x241 选择 2 端口或 3 端口 SSDT 模板
 
-3. **AmdUsb4Dxe 在两个固件中都存在** — 但工程版是 debug build (127KB, 5 sections),
+3. **生产版包含 4 个 UCSI FFS 文件** — UcsiDriver + 3 个 SSDT 模板
+   (UcsiAsl, Ucsi2PortsAsl, Ucsi3PortsAsl)，工程版零个。
+
+4. **AmdUsb4Dxe 在两个固件中都存在** — 但工程版是 debug build (127KB, 5 sections),
    生产版是 release build (103KB, 4 sections)。两者都依赖相同的 PCI enumeration protocol。
 
-4. **生产版多 51 个 UEFI 模块** — 涵盖 UCSI、WiFi、指纹、安全摄像头、FIDO、TLS 等
+5. **生产版多 51 个 UEFI 模块** — 涵盖 UCSI、WiFi、指纹、安全摄像头、FIDO、TLS 等
    完整的平台功能。工程版是"最小启动"配置。
+
+6. **UCSI 邮箱是标准 48 字节结构** — CCI(4B) + CTRL(8B) + MGI(16B) + MGO(16B) + VER(2B) + RSV(2B)，
+   通过 SystemMemory OperationRegion 映射，OS 端由 ucsi_acpi 内核模块通过 ACPI 方法访问。
 
 ### 13.10 修复路径 (更新)
 
 | 路径 | 可行性 | 效果预评 |
 |------|--------|---------|
 | **刷写生产 BIOS + EC** | ✅ 最佳 | USB4 + UCSI + 完整平台功能 |
-| **仅提取 UcsiDriver 注入 SPI** | ⚠️ 极难 | UCSI 可能工作，但 USB4 NHI 仍无法枚举 |
-| **ACPI 手动添加 PNP0CA0** | ⚠️ 需 EC 配合 | EC 0.15 不支持 UCSI 邮箱，无效 |
-| **修改 APCB** | ❓ 不确定 | APCB 差异主要是内存配置，不是 USB4 开关 |
+| **仅提取 UcsiDriver + SSDT 注入** | ⚠️ 极难 | 需同时注入 4 个 FFS 文件到 FV，且 EC 0.15 不支持 UCSI 邮箱 |
+| **ACPI 手动添加 PNP0CA0** | ⚠️ 需 EC | 驱动逻辑需 EC 实现 UCSI 邮箱读写 + SCI 中断，EC 0.15 无此功能 |
+| **修改 APCB** | ❌ 无效 | APCB 差异证实为内存 SPD 配置，非 USB4 开关 |
 
 **推荐**: 使用联想 Bootable CD 或 SPI 编程器刷写生产 BIOS (N3GET74W) + EC (N3GHT68W)。
 需同时更新 BIOS 和 EC，仅更新一个可能导致不兼容。
+
+> **逆向工程结论**: UcsiDriver 的 48 字节 UCSI 邮箱需要 EC 主动参与 —
+> EC 必须监听 CTRL 寄存器写入、执行 UCSI 命令、更新 CCI 状态位、
+> 并通过 GPIO/SCI 通知 OS。这不是纯软件可以绕过的限制。
