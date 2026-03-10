@@ -1,0 +1,123 @@
+//
+// 
+// Message keys are 32-bit values (DWORD) xxxxxxxxh
+//
+// Typical usage:
+//   xxxxx xx x
+//
+//   where xxxxx denotes the type of function (totally arbitrary)
+//            xx denotes a particular function
+//             x denotes a message for that function
+//
+// 0x00000000 - 0x7FFFFFFF  Reserved, used internally by ASDT.EXE
+// 0x80000000 - 0xFFFFFFFF  Available for users (when ASDT ported to scripts)
+//
+// Each ASDT function is allocated 16 message keys:
+// 0xxxxxxxxy
+// Where xxxxxxx is function reference, and y is the message number
+//
+// 0x00000000 - 0x0000003F  are reserved for .MSB file parameters (non-typical usage)
+// 0x00000040 - 0x00007FFF  are reserved for standard ASDT shell messages
+// 0x00008000 - 0x7FFFFFFF  are available for additional functions
+//
+// 0x00008000 - 0x00009FFF  are reserved for CS461x functions
+// 0x0000A000 - 0x0000CFFF  are reserved for CS423xB functions
+//
+// 0x70000000 - 0x70000FFF  are reserved
+// 0x70001000 - 0x7009FFFF  are reserved for generic ASDT
+// 0x700A0000 - 0x7FFFFFFF  are available for further modification
+
+[ENGLISH]
+/////////////////////////////////////////////////
+// ASDT Standard Messages
+// 
+00000040 "PASS\n"
+00000041 "FAIL\n"
+00000042 " "
+00000043 "  *General Program Error.\n"
+
+/////////////////////////////////////////////////
+// Function calls
+
+// CS461xDetect()
+00008000 " CS461x Detection : "
+// CS461xDetect Error Messages
+// CS461x_NOT_FOUND
+00008001 "  *BIOS doesn't find the CS461x.\n"  
+00008002 "  *The CS461x may not be enabled in SETUP... Run SETUP.\n"
+// CS461x_UNCONFIGURED           
+00008003 "  *BIOS found the CS461x, but it has no resources.\n"
+// PCI_BIOS_NOT_DETECTED
+00008004 "  *PCI BIOS functions not found - not able to search for CS461x.\n"
+// ERROR_READING_CONFIG_SPACE
+00008005 "  *PCI BIOS read failed.\n"
+// DEVICE_ID_DOESNT_MATCH_BIOS
+00008006 "  *PCI DeviceID reported by CS461x doesn't match DeviceID reported by the BIOS search.\n"
+// VENDOR_ID_DOESNT_MATCH_BIOS
+00008007 "  *PCI VendorID reported by CS461x doesn't match VendorID reported by the BIOS search.\n"
+// INVALID_CLASS_CODE
+00008008 "  *PCI Class Code reported by CS461x is not correct.\n"
+// INVALID_INTERRUPT_PIN
+00008009 "  *The CS461x was not allocated a valid PCI Interrupt Pin resource by the BIOS.\n"
+//RROR_CONVERTING_ADDRESS
+0000800A "  *General program failure (converting address)\n"
+
+// CS461xDirectIOTest()
+00008010 " CS461x Direct I/O Test : "
+// CS461xDirectIOTest() Error Messages
+// CS461x_UNMAPPED_IO_REGS
+00008011 "  *CS461x Direct I/O Block not at Base Address 0.\n"
+
+// CS461xDirectMemoryTest()
+00008020 " CS461x Direct Memory Test : "
+// CS461xDirectMemoryTest() Error Messages
+// CS461x_UNMAPPED_MEM_REGS
+00008021 "  *CS461x Direct Memory Block not at Base Address 1.\n"
+// CS461x_PARAMETER_RAM_FAILURE    
+00008022 "  *CS461x Parameter RAM failure.\n"
+// CS461x_SAMPLE_RAM_FAILURE       
+00008023 "  *CS461x Sample RAM Failure.\n"
+// CS461x_PROGRAM_RAM_FAILURE      
+00008024 "  *CS461x Program RAM Failure.\n"
+// CS461x_CORE_CLOCK_NOT_VALID     
+00008025 "  *CS461x SP Clock not valid.\n"
+
+// CS461x_
+
+// CS461xSetup()
+00008030 " CS461x Setup : "
+00008031 "  *Unable to initialize register struct.\n"
+00008032 "  *CS461x PLL unable to lock to CS423xB SCLK.\n"
+00008033 "    CS423xB may not be enabled/configured - Run SETUP.\n"
+00008034 "  *CS461x FIFO-clear Failure.\n"
+
+// CS461xToggleGPOPin()
+00008040 " CS461x Toggle GPO Pin : "
+00008041 "  *Invalid GPO pin in switch statement\n"
+
+// CS461xMaskRegister()
+00008050 " CS461x Mask Register : "
+
+// CS461xSDINSDOUTPinLoop()
+00008060 " CS461x SDIN to SDOUT Pin loop : "
+
+// CS461xRestorePowerUpDefaults()
+00008070 " CS461x Restore Power Up Defaults : "
+
+// CS461xToggleMemoryAccess
+00008080 " CS461x Toggle Memory Access : " 
+00008081 "  *Error Reading Configuration Space.\n"
+00008082 "  *Already enabled.\n"
+00008083 "  *Enabled by system - leaving enabled.\n"
+00008084 "  *Error Writing Configuration Space.\n"
+00008085 "  *General Program Error (invalid switch).\n"
+
+
+/////////////////////////////////////////////////
+// ASDT Generic messages Messages
+
+70001000 "AUDIO SYSTEM - CS461x PCI Accelerator : "
+70001001 "AUDIO SYSTEM - CS423xB ISA CODEC : "
+70001002 " Toggle Analog Loopback : "
+70001003 "AUDIO SYSTEM - CS461x/CS423x X-Link : "
+

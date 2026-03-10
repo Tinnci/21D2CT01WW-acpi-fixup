@@ -1,0 +1,39 @@
+Release Notification
+*******************************************************************************
+Rw EEPROM information.                                               21/SEP/2018
+ControlWosEEPROM.exe
+
+Version: 1.0.0.1 0000
+
+Fixed/Modification:
+            First Edit (#15015)
+
+USAGE : ControlWosEEPROM.exe [/r|/w|/?] [Bank] [Start_Addr] [End_Addr] [Hex string/[ASCII string]] [/e ENV_string]
+        /r              Read data from EEPROM.
+        /e              Write data that read from EEPROM into specific (ENV_string).cmd file for set environment variable.
+        /w              Write data into EEPROM and Double check it.
+        /?              Show help information.
+        Bank            Bank of EEPROM: 0~7 (hexadecimal data).
+        Start_Addr      Start address: 0~ff (hexadecimal data).
+        End_Addr        End address  : 0~ff (hexadecimal data).
+        Hex string      Hex string for write EEPROM, two character combine to one data.
+                        Ex: 6162636465
+        ASCII string    ASCII string for write EEPROM, one character is equal one data.
+                        Ex: [abcde]
+        ENV_string      ENV_string for write environment variable, English word.
+                        Ex: USER
+Example:
+            ControlWosEEPROM.exe /?
+If you want to set environment variable from EEPROM data.
+            ControlWosEEPROM.exe /r 0 A0 A5 /e USER
+If you want to write MAC (00-1B-77-02-77-BC) into EEPROM(Bank 0,offset A0h~A5h):
+            ControlWosEEPROM.exe /w 0 A0 A5 001B770277BC
+
+Return Value:           
+        0: FAIL
+        1: SUCCESS
+
+Note:
+1. Support WOS project only 
+2. PJT.bin is required.
+*******************************************************************************

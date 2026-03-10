@@ -1,0 +1,105 @@
+Revision History / Thinkbook Plus G2 Huaqin (System box)
+
+Rev.a 2020.10.13
+ Initial Release
+ SCheckCapG14T_v0.02.0
+ wflash_g14t_3_26(32)
+ FW v0001rev03 (5299, 529B)
+       v0001rev10 (5298)
+ 
+Rev.b 2020.10.27
+ Initial Release
+ SCheckCapG14T_v0.02.3 support for home key for Thinkbook Plus G2
+ wflash_g14t_3_26(32)
+ FW v0001rev03 (5299, 529B)
+       v0001rev13 (5298)
+
+Rev.c 2020.11.17
+ FW v0001rev15 (5298)
+ Changed : CAL_THRESHOLD=975 (5298)
+ Changed : CALTH_IGNORELINE=1,1,2,1 (5298)
+ Changed : LUT (5298)
+ Add batch file.
+ Execute these files and start SCheckCap automatically. 
+ 
+Rev.d 2020.11.18
+ SCheckCapG14T_v0.02.3k
+ Changed : VID=0x048D (5298)
+ Changed : PID=0x8957 (5298)
+
+Rev.e 2020.11.20
+ Update .bat file.
+ Add chkhidpid
+
+Rev.f 2020.12.16
+ FW v0001rev16 (5298)
+
+Rev.g 2020.12.24
+ FW v0001rev20 (5298)
+        v0001rev04 (5299, 529B)
+  Changed : RAW_INPUT=1 (5299)
+ Changed : LUT (5298)
+ Changed : HK_TOUCH=2100 (5298)
+
+Rev.h 2021.3.5
+ [PID5298]
+ FW v0001rev24
+ Changed : RAW_INPUT=1
+ Disabled : RAW_INPUT_REGISTOR
+ Changed : CAL_THRESHOLD=292
+ Changed : HK_TOUCH=2000
+ Changed : TIPC_TPS=7
+ Changed : X, Y LUT
+
+ [PID5299, 529B]
+ FW v0002rev00
+ Changed : RAW_INPUT=0
+ Changed : RAW_INPUT_REGISTOR=5
+ Changed : AES_LOG_ONLY=0
+ Changed : TIPC_TPS=7
+
+Rev.i 2021.3.18
+ FW v0002rev02 (529B)
+ Changed : CAL_THRESHOLD=292 (529B)
+ 
+Rev.j 2021.3.24
+ FW v0002rev07 (5298)
+ Changed : RAW_INPUT=0 (5298)
+ Changed : RAW_INPUT_REGISTOR=5 (5298)
+ Changed : AES_LOG_ONLY=0 (5298)
+ Changed : HK_TOUCH=300
+ Disabled : HK_REMOVE=, HK_REMOVE_LOW=
+ 
+Rev.k 2021.4.10
+ FW v0002rev12 (5298)
+ Changed : HK_TOUCH=200
+ 
+Rev.l 2021.4.16
+ FW v0002rev13 (5298)
+ Changed : HK_TOUCH=250 (5298)
+ 
+Rev.m 2021.4.23
+ SCheckCapG14T_v0.02.6m
+ [PID5299]
+ FW v0002rev02
+	 Chenged : RAW_INPUT_REGISTOR=20
+	 Changed : CAL_THRESHOLD=292
+ [PID5298]
+	 Added : HOMEKEY2_CHECK=0
+	           HK2_TOUCH_TIMEOUT=10000
+	           HK2_REMOVE_TIMEOUT=10000
+	           ;HK2_TOUCH_TH_HIGH=500
+	           HK2_TOUCH_TH_LOW=225
+	           HK2_REMOVE_TH_HIGH=170
+	           ;HK2_REMOVE_TH_LOW=0
+	           HK2_DATA_COUNT=16 
+
+Rev.n 2021.4.23
+ SCheckCapG14T_v0.02.7m
+
+Rev.o 2021.5.12
+ ScheckCapG14T_v0.02.8m	
+ [PID5298]
+	FW v0002rev14
+	Changed: HK bit = 0 by default in maintenance mode
+ 

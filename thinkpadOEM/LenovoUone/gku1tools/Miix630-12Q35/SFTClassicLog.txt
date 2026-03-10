@@ -1,0 +1,28 @@
+2018/05/28 14:52:26.794	[Error] - RadioManagers.exe file not found
+2018/06/21 09:15:20.511	[Error] - RadioManagers.exe file not found
+2018/06/21 09:15:27.386	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:40.745	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:40.761	[Info] - FINISH	BiosQCOA3
+2018/06/21 09:15:40.792	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:43.292	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:43.308	[Info] - FINISH	BiosQCOA3
+2018/06/21 09:15:43.323	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:44.636	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:44.636	[Info] - FINISH	BiosQCOA3
+2018/06/21 09:15:44.651	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:45.886	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:45.901	[Info] - FINISH	BiosQCOA3
+2018/06/21 09:15:45.917	[Info] - START	BiosWriteSN - Inputs: en-US
+2018/06/21 09:15:47.589	[Info] - FAIL	BiosWriteSN
+2018/06/21 09:15:47.605	[Info] - FINISH	BiosWriteSN
+2018/06/21 09:15:47.620	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:48.933	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:48.948	[Info] - FINISH	BiosQCOA3
+2018/06/21 09:15:48.964	[Info] - START	BiosQCOA3 - Inputs: en-US
+2018/06/21 09:15:50.308	[Info] - FAIL	BiosQCOA3
+2018/06/21 09:15:50.323	[Info] - FINISH	BiosQCOA3
+2019/05/24 17:18:37.419	[Error] - RadioManagers.exe file not found
+2019/05/24 17:18:49.302	[Error] - RunTest: GenerateSystemSettings Failed - incorrect file path: GenerateSystemSettings.exe
+2019/05/24 17:18:51.440	[Info] - START	BiosQCOA3 - Inputs: en-US
+2019/05/24 17:18:53.269	[Info] - FAIL	BiosQCOA3
+2019/05/24 17:18:53.269	[Info] - FINISH	BiosQCOA3

@@ -1,0 +1,13 @@
+echo " Command line reference:"
+echo " uone.nsh [/LN] [/MT] [/PN] ^"string^"  [/UU AUTO]"
+echo "   /LN             Set Product SN"
+echo "   /MT             Set Machine Type Model"
+echo "   /PN             Set Product Name"
+echo "   /UU AUTO        Generate and Set UUID"
+echo ===============================================================================
+echo " *Note: Do not forget the quotes in the command line!"
+echo " *Note: Do not forget the quotes in the command line!!"
+echo " *Note: Do not forget the quotes in the command line!!!"
+echo " "
+echo " Type ^"ldiag^" to call Lenovo Diagnostics, or press Ctrl+Alt+Del to reboot"
+echo " "

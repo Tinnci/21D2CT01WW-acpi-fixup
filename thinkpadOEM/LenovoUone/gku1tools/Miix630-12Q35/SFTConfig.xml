@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<SystemFunctionalTest>
+  <!--<Language Name="en-US" />-->
+  <Language Name="en-US" />
+
+  <AutoTest StopAtFail= "True" />
+  <MesOffLine MesOffLineEnabled= "True" />
+  <L1ServerOffLine L1ServerOffLineEnabled= "True" />
+  <MesStationType StationType= "CFC" />
+  <ShowVersionNumber ShowVersion= "CFC_AfterSale_4.2.2" />
+
+  <Phase Name="BiosSetting">
+    <TestMenu>
+      <MenuItem Name ="BiosWriteSN"/>
+      <MenuItem Name ="BiosWriteMTMnumber"/>
+      <MenuItem Name ="BiosWriteKeyboardID"/>
+      <MenuItem Name ="BiosQCOA3"/>
+      <!--MenuItem Name ="BiosWriteFamilyName"/>
+      <MenuItem Name ="BiosWriteProductName"/>
+      <MenuItem Name ="BiosWriteProjectName"/>
+      <MenuItem Name ="BiosWriteBrandType"/>
+      <MenuItem Name ="BiosWriteOSPN"/>
+      <MenuItem Name ="BiosWriteOSDescriptor"/>
+      <MenuItem Name ="BiosWriteUUID"/>
+      <MenuItem Name ="BiosWriteIMEI"/>
+      <MenuItem Name ="BiosQCBT"/>
+      <MenuItem Name ="BiosQCWLAN"/>
+      <MenuItem Name ="BiosQCSSD"/>
+      <MenuItem Name ="BiosQCOPM"/>
+      <MenuItem Name ="BiosQCDB"/>
+      <MenuItem Name ="BiosQCKEKpub"/>
+      <MenuItem Name ="BiosQCPKpub"/-->
+      <!--MenuItem Name="SIME"/>
+      <MenuItem Name="SIM"/-->
+    </TestMenu>
+  </Phase>
+
+  <TestPath>
+    <Orientation>Orientation.exe</Orientation>
+    <GenerateSystemSettings>GenerateSystemSettings.exe</GenerateSystemSettings>
+    <SystemInfo>SystemInfoTest.exe</SystemInfo>
+    <Bluetooth>Bluetooth.exe</Bluetooth>
+    <Battery>Battery.exe</Battery>
+    <Brightness>Brightness.exe</Brightness>
+    <Display>Display.exe</Display>
+    <ExtDisplay>ExternalDisplay.exe</ExtDisplay>
+    <Accelerometer>Accelerometer.exe</Accelerometer>
+    <Gyrometer>Gyrometer.exe</Gyrometer>
+    <Light>LightSensor.exe</Light>
+    <Compass>Compass.exe</Compass>
+    <GPS>Geolocation.exe</GPS>
+    <Pen>Pen.exe</Pen>
+    <Touch>Touch.exe</Touch>
+    <Touchpad>Touchpad.exe</Touchpad>
+    <Keyboard>Keyboard.exe</Keyboard>
+    <RemovableDevice>RemovableDevice.exe</RemovableDevice>
+    <WiFi>Wifi.exe</WiFi>
+    <SIME>SIME.exe</SIME>
+    <SIM>SIM.exe</SIM>
+    <Speaker>Audio.exe</Speaker>
+    <Headset>AudioHeadset.exe</Headset>
+    <Keypad>HardwareButton.exe</Keypad>
+    <FrontCamera>FrontCameraSkin.exe</FrontCamera>
+    <FrontCameraRec>FrontCameraSkinRec.exe</FrontCameraRec>
+    <RearCamera>RearCameraSkin.exe</RearCamera>
+    <RearCameraRec>RearCameraSkinRec.exe</RearCameraRec>
+    <LAN>LAN.exe</LAN>
+    <IRCamera>IRCamera.exe</IRCamera>
+    <HallSensor>HallSensor.exe</HallSensor>
+    <Upload>Upload.exe</Upload>
+    <RTC>RTC.exe</RTC>
+    <BurnInTest>BurnInTest.exe</BurnInTest>
+    <CpuTest>CpuTest.exe</CpuTest>
+    <RamTest>RamTest.exe</RamTest>
+    <StorageTest>StorageTest.exe</StorageTest>
+    <VGATest>VGATest.exe</VGATest>
+    <S5Test>S5Test.exe</S5Test>
+    <MesServerSetting>MesServerSetting.exe</MesServerSetting>
+    <L1ServerSettings>L1ServerSettings.exe</L1ServerSettings>
+    <BiosWriteSN>BiosWriteSN.exe</BiosWriteSN>
+    <BiosWriteMTMnumber>BiosWriteMTMnumber.exe</BiosWriteMTMnumber>
+    <BiosWriteFamilyName>BiosWriteFamilyName.exe</BiosWriteFamilyName>
+    <BiosWriteProductName>BiosWriteProductName.exe</BiosWriteProductName>
+    <BiosWriteProjectName>BiosWriteProjectName.exe</BiosWriteProjectName>
+    <BiosWriteBrandType>BiosWriteBrandType.exe</BiosWriteBrandType>
+    <BiosWriteKeyboardID>BiosWriteKeyboardID.exe</BiosWriteKeyboardID>
+    <BiosWriteOSPN>BiosWriteOSPN.exe</BiosWriteOSPN>
+    <BiosWriteOSDescriptor>BiosWriteOSDescriptor.exe</BiosWriteOSDescriptor>
+    <BiosWriteUUID>BiosWriteUUID.exe</BiosWriteUUID>
+    <BiosQCBT>BiosQCBT.exe</BiosQCBT>
+    <BiosQCWLAN>BiosQCWLAN.exe</BiosQCWLAN>
+    <BiosWriteIMEI>BiosWriteIMEI.exe</BiosWriteIMEI>
+    <BiosQCSSD>BiosQCSSD.exe</BiosQCSSD>
+    <BiosQCOPM>BiosQCOPM.exe</BiosQCOPM>
+    <BiosQCOA3>BiosQCOA3.exe</BiosQCOA3>
+    <BiosQCDB>BiosQCDB.exe</BiosQCDB>
+    <BiosQCKEKpub>BiosQCKEKpub.exe</BiosQCKEKpub>
+    <BiosQCPKpub>BiosQCPKpub.exe</BiosQCPKpub>
+    <DownLoadSFTConfig>DownLoadSFTConfig.exe</DownLoadSFTConfig>
+    <WriteTongsNumber>WriteTongsNumber.exe</WriteTongsNumber>
+	
+
+</TestPath>
+
+  </SystemFunctionalTest>

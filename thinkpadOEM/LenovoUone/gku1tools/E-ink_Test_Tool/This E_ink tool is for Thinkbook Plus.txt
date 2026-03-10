@@ -1,0 +1,6 @@
+
+Thinkbook Plus Test Tool
+https://pcsupport.lenovo.com/downloads/e_link
+
+Run E-ink test tool after E-ink FRU replacement - ThinkBook Plus
+https://support.lenovo.com/us/en/solutions/HT510312

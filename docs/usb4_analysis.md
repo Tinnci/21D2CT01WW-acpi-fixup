@@ -1718,3 +1718,195 @@ Multiple flash chip definitions match the detected chip(s): "W25Q256JW", "W25R25
 | 有几个物理 Flash 芯片? | 2 — 主 SPI (32MB, flashrom 可见) + EC 内部 (~512KB, 不可见) |
 | flashrom "两个芯片"? | 同一颗 W25Q256JW 的两个数据库条目, 不是两个物理芯片 |
 | APCB 补丁涉及 FL2? | **否**, 仅操作主 SPI Flash |
+
+---
+
+## §20 BootX64.efi 逆向分析：Lenovo BIOS 刷写工具
+
+**日期**: 2025-03-10  
+**目标**: 逆向分析 Lenovo BIOS 更新包中的 BootX64.efi，理解刷写流程和安全机制
+
+### 20.1 文件概况
+
+| 文件 | 大小 | PE32+ | 说明 |
+|------|------|-------|------|
+| BootX64.efi | 2,145,208 | AMD64, EFI App | 主刷写工具 (含 DC/电池检查) |
+| NoDCCheck_BootX64.efi | 2,143,768 | AMD64, EFI App | 去除电源检查版本 |
+| SHELLFLASH.EFI | 23,296 | AMD64, EFI App | EFI Shell 引导加载器 |
+
+**BootX64.efi** 是 Lenovo **TDK (ThinkPad Development Kit)** 框架的 BIOS 刷写工具，不是标准 UEFI 胶囊更新器——它是一个功能完整的 EFI Shell 应用，内嵌：
+- EFI Shell + 驱动管理
+- BIOS/EC/USB 设备固件刷写引擎
+- SMBIOS/DMI 编辑
+- BIOS GUARD (Intel PFAT) 支持
+- 安全验证子系统
+
+### 20.2 PE32+ 结构
+
+```
+Section  VAddr       VSize     RawSize    Flags
+───────────────────────────────────────────────────
+.text    0x0002A0    0x205F7A  0x205F80   CODE+EXEC+READ  (2MB 代码)
+text     0x206220    0x000356  0x000360   IDATA+READ+WRITE (数据)
+(rdata)  0x206580    0x002700  0x002700   IDATA+READ       (只读数据)
+.xdata   0x208C80    0x0018C8  0x0018E0   IDATA+READ       (异常处理)
+.reloc   0x20A560    0x000FEC  0x001000   IDATA+READ       (重定位)
+
+Entry Point RVA: 0x1A5BC0
+Image Base: 0x0 (relocatable)
+```
+
+### 20.3 刷写流程
+
+从字符串分析还原完整流程：
+
+```
+1. 读取固件镜像
+   ├─ "Read BIOS image from file" → 从 $0AN3G00.FL1 读取
+   ├─ "Read BIOS image from memory" → 或从内存读取
+   └─ "Read current BIOS" → 读取当前 SPI 内容
+
+2. 安全验证
+   ├─ "Failed to verify Secure Flash image" → X.509 签名校验
+   ├─ "Flash BIOS is not compatible" → 机型兼容性检查
+   ├─ "Flash BIOS is not an upgrade" → 版本升级检查
+   ├─ "Secure RollBack Prevention is enabled" → 防降级检查
+   └─ "Enable Microsoft Bit-locker check" → BitLocker 检查
+
+3. 初始化刷写
+   ├─ "Initialize Flash module" → 初始化 SPI 访问
+   ├─ "Open flash write enable status" → 通过 SMI 解锁 SPI 写保护
+   ├─ "Prepare patched NvStorage" → 合并 NVRAM 变量
+   └─ "Backup current BIOS" → 备份当前 BIOS
+
+4. 执行刷写
+   ├─ "Begin Flashing......"
+   ├─ "Total number of region to flash = %d" → 按区域刷写
+   ├─ "Region name: %s" → 区域名称
+   ├─ "Total blocks of the image = %d" → 按 4KB 块操作
+   ├─ "Erase fail: Block = 0x%X" → 块擦除
+   ├─ "Write fail: Block = 0x%X" → 块写入
+   └─ "Image flashing done" → 完成
+
+5. 刷写后操作
+   ├─ "FlashCommand" → 写入 BCP (Boot Config Parameters) 到 EVSA NVRAM
+   ├─ "TdkBiosRomWrite" → ROM 写入确认
+   ├─ "BIOS is updated successfully"
+   └─ "System will shutdown or reboot in 5 seconds"
+
+6. EC 固件更新 (FL2)
+   ├─ "ECFW Update" / "EC Update"
+   └─ 通过 EC mailbox 协议写入 EC 内部 Flash
+```
+
+### 20.4 SMI 通信机制
+
+BootX64.efi **不直接操作 SPI 寄存器**，而是通过 **SMI (System Management Interrupt)** 与 BIOS 固件的 SMM 处理器通信：
+
+```
+BootX64.efi (EFI Shell Ring 0)
+    │
+    ├─ LenovoVariableSmiCommand → SMI 触发
+    │
+    ▼
+BIOS SMM Handler (Ring -2)
+    │
+    ├─ "Failed to initialize SMI" → SMM 初始化
+    ├─ "Failed on executing WRITE command" → SPI 写入
+    ├─ "Open flash write enable status" → 解锁 SPI Flash
+    └─ "Close flash write enable status" → 重新锁定
+```
+
+**关键发现**：刷写操作通过 `LenovoVariableSmiCommand` 和 `LenovoBiosFeature` 两个 Lenovo 私有协议实现，SMM 处理器负责实际的 SPI 读写和写保护控制。
+
+### 20.5 CLI 参数与功能
+
+从嵌入的帮助文本还原 FlashCommand 的命令行选项：
+
+| 功能 | 说明 |
+|------|------|
+| `filename` | 指定 FL1/FL2 文件 |
+| `BIOS Update` | 刷写完整 BIOS |
+| `EC Update` / `ECFW Update` | 刷写 EC 固件 |
+| `Skip Battery check` | 跳过电池/电源检查 (= NoDCCheck 版本) |
+| `Skip BIOS build date time checking` | 跳过构建日期检查 |
+| `Skip part number checking` | 跳过零件号检查 |
+| `Skip flash options in BIOS FlashCommand` | 跳过某些选项 |
+| `Shutdown after flash completed` | 完成后关机而非重启 |
+| `Silent operation` | 安静模式 (无蜂鸣) |
+| `Replace SLP marker or MSDM key` | 替换 Windows 激活密钥 |
+| `Enable flash verification` | 启用刷写后验证 |
+| `Enable Microsoft Bit-locker check` | 启用 BitLocker 检查 |
+| `Update variable size CPU microcode` | 更新 CPU 微码 |
+| `password` | 管理员密码 |
+| `Flash without skipping same content blocks` | 不跳过相同块 (全量) |
+| `/rsbr GUID filename` | **按 GUID 替换子区域** |
+| `FDLA` | **写入指定物理地址** |
+
+**特别关注**：
+- `/rsbr GUID filename` — 可以按 GUID 定位并替换特定子区域
+- `FDLA` — 可以写入指定的物理地址
+- 工具在刷写前会跳过内容相同的块 (增量刷写)
+
+### 20.6 安全检测机制
+
+```
+签名验证链:
+  Lenovo Ltd. Root CA 2012 (RSA)
+    └─ ThinkPad Product CA 2012 (RSA)
+        └─ Capsule/FL1 镜像签名
+
+安全密钥检测 (SCT = Security Configuration Table):
+  ├─ "Secure flash public key is same with sample/dummy in SCT"
+  ├─ "Secure boot platform key is same with sample/dummy in SCT"
+  ├─ "Secure boot key exchange key is same with sample/dummy in SCT"
+  ├─ "Unlock key is same with sample/dummy in SCT"
+  ├─ "Verified boot public key is same with sample in SCT"
+  ├─ "Boot guard public key is same with sample in SCT"
+  └─ "BIOS guard(PFAT) hash is same with sample/dummy in SCT"
+```
+
+**工程样机关键发现**：工具会主动检测 SCT 中的密钥是否为 **sample/dummy** 密钥。这意味着：
+1. 工程版 BIOS 可能使用样品/测试密钥
+2. 如果安全密钥是 dummy 的，签名验证可能可以被绕过或放松
+3. 这为将来可能通过修改后的 BootX64.efi 刷写提供了一条潜在路径
+
+### 20.7 BootX64 vs NoDCCheck 对比
+
+| 维度 | BootX64 | NoDCCheck |
+|------|---------|-----------|
+| 文件大小 | 2,145,208 | 2,143,768 (-1,440) |
+| Image Size | 0x20B560 (2,143,584) | 0x20AFC0 (2,142,144) |
+| Entry RVA | 0x1A5BC0 | 0x1A5980 |
+| 代码差异 | — | 67.2% .text 不同 |
+| 安全验证 | ✅ 完整 | ✅ 完整 (相同) |
+| 证书/签名 | 2× Root CA, 1× Product CA | 2× Root CA, 1× Product CA |
+| DC/电池检查 | ✅ 需要 AC 电源 | ❌ 已移除 |
+
+**两者是完全独立的编译版本**，不是简单的二进制补丁。NoDCCheck 仅移除了电源检查，安全验证完整保留。
+
+### 20.8 BIOS 子区域映射 (BCP)
+
+BootX64.efi 使用 3 字母代码管理 BIOS 子区域：
+
+```
+bak = 备份          bbl = Boot Block      bcp = Boot Config Parameters
+bcplogo = 启动 Logo  cac = CA 证书         capload = 胶囊加载器
+cbp = ??             cvar = 自定义变量     dat = 数据
+dco = DMI 配置       dmc = DMI 制造商      dmm = DMI 内存
+dmpgr = DMI BIOS 区  dmppr = DMI 处理器    dfs/dks/dms/dos = DMI 子区域
+dpc/dpm/dps/dsc/dsm/dss/dus/dvc = 其他子区域
+```
+
+### 20.9 对 APCB 补丁策略的影响
+
+| 问题 | 结论 |
+|------|------|
+| 能否通过 BootX64.efi 刷写我们的补丁? | **否** — FL1 签名校验会失败 (我们没有 Lenovo 私钥) |
+| NoDCCheck 能绕过签名吗? | **否** — 仅去除电源检查，安全验证完整保留 |
+| FDLA/sub-region 写入能用吗? | **理论上可以**，但同样受 SMI 安全策略限制 |
+| 工程 BIOS 的密钥是 dummy 的吗? | **可能** — 工具有 dummy key 检测逻辑，工程样机常用测试密钥 |
+| 最安全的刷写方式? | **仍然是 flashrom 直写 SPI** — 完全绕开 BootX64.efi 和 SMI 安全层 |
+| BootX64.efi 的 SMI 刷写涉及 PSP 验证吗? | **可能** — SMM handler 可能会调用 PSP 验证固件完整性 |
+
+**结论**: flashrom 外部编程器方案仍然是最安全、最可控的 APCB 补丁应用方式。BootX64.efi 的逆向分析证实了它有多层安全检查，不适合注入修改过的固件。但 dummy key 检测逻辑的存在暗示工程样机可能运行在降级安全模式下，这可能简化了 PSP 的启动验证要求。

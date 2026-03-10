@@ -1,0 +1,48 @@
+FILE: README.TXT
+TITLE
+    ThinkPad Maintenance Utilities - US -
+PART NUMBER
+    Un-Formal
+ISSUE DATE
+    2015.Jul.2
+BUILD DATE
+    2015.Jul.1
+ORIGINATOR
+    Masahiro Tokuno
+    Tablet S/W Tablet Dev.
+PRODUCT DATA
+    MEDIA TYPE   : 
+    LEVEL        :
+    SYSTEM LIST  : 
+    VERSION      : 1.06
+    DATE STAMP   :
+    BUILD ID     :
+    CHECK SUM    : None
+    VIRUS CHECK  : None
+    TITLE        :
+    DATE STAMP   :
+    BUILD ID     :
+
+------------------------------------------------------------------------------
+
+CAUTIONS :
+
+Lenovo Confidential
+For development, service and manufacturing use only.
+
+------------------------------------------------------------------------------
+
+RESTRICTIONS :
+
+------------------------------------------------------------------------------
+
+HOW TO BUILD:
+
+ 1. Execute I7TM37US Maintenance Diskette installer.
+ 2. Attach blank USB memory key and execute USBFMTPW.EXE to format USB memory key.
+ 3. Open USB memory key folder and create new directory X:/EFI/BOOT/.
+ 4. Copy BOOTX64.EFI to  /EFI/BOOT/ BOOTX64.EFI.
+ 5. Attach USB memory key to target system and power on.
+ 6. ThinkPad Maintenance Utilities will be loaded.
+
+======================== End of Letter =======================================

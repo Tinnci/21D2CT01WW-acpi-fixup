@@ -1,0 +1,6 @@
+
+ThinkBook Plus G2 Test Tool
+https://support.lenovo.com/downloads/g2_e_link
+
+Run E-ink test tool after LCM(with E-ink) FRU replacement - ThinkBook Plus G2
+https://support.lenovo.com/us/en/solutions/ht512562

@@ -1,0 +1,146 @@
+
+***************************************************************************************************
+
+uRWEEPROM.efi                                                         01/DEC/2017
+Version: 1.0.0.3
+
+Environment: 
+UEFI x64
+
+Fixed/Modified:
+1. Change command of read/write from 4B/4C to 4D/4E.
+2. Use 0x42 to change bank.
+
+USAGE: uRWEEPROM.efi [/r|/w|/h] [Bank] [start_address] [end_address] [hex string|[ASCII string]] [/e] [ENV_name]
+       /r:              Read  data from EEPROM.
+       /w:              Write data into EEPROM.
+       /h:              Print uRWEEPROM information and format content.
+       Bank:            00-07(hex)
+       start_address:   00-ff(hex)
+       end_address:     00-ff(hex)
+       You have two option to write data to EEPROM.
+       (1)  hex  string: two character is combine one data.
+       EX: 616263
+       (2) ASCII string: one character is equal one data.
+       EX: [abc]
+       /e:              Set environment variable from EEPROM data.
+       ENV_name:        environment variable name.
+
+For example:
+       If you want to read data from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5
+       If you want to set environment variable from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5 /e variable_name
+       If you want to write data( hex string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 616263646566
+       If you want to write data( ASCII string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 [abcdef]
+       If you want to get help:
+       uRWEEPROM.efi /h
+
+Return Value:
+0: Pass
+1: Fail
+
+Known Issues:
+N/A
+
+Notice:
+This utility is only support C38 Lenovo projects.
+***************************************************************************************************
+
+uRWEEPROM.efi                                                         26/FEB/2016
+Version: 1.0.0.2
+
+Environment: 
+UEFI x64
+
+Fixed/Modified:
+Check the length of the string is equal address range.
+
+USAGE: uRWEEPROM.efi [/r|/w|/h] [Bank] [start_address] [end_address] [hex string|[ASCII string]] [/e] [ENV_name]
+       /r:              Read  data from EEPROM.
+       /w:              Write data into EEPROM.
+       /h:              Print uRWEEPROM information and format content.
+       Bank:            00-07(hex)
+       start_address:   00-ff(hex)
+       end_address:     00-ff(hex)
+       You have two option to write data to EEPROM.
+       (1)  hex  string: two character is combine one data.
+       EX: 616263
+       (2) ASCII string: one character is equal one data.
+       EX: [abc]
+       /e:              Set environment variable from EEPROM data.
+       ENV_name:        environment variable name.
+
+For example:
+       If you want to read data from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5
+       If you want to set environment variable from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5 /e variable_name
+       If you want to write data( hex string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 616263646566
+       If you want to write data( ASCII string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 [abcdef]
+       If you want to get help:
+       uRWEEPROM.efi /h
+
+Return Value:
+0: Pass
+1: Fail
+
+Known Issues:
+N/A
+
+Notice:
+This utility is only support C38 Lenovo projects.
+
+***************************************************************************************************
+
+uRWEEPROM.efi                                                         24/FEB/2016
+Version: 1.0.0.1
+
+Environment: 
+UEFI x64
+
+First Create:
+Compal read/write EEPROM data utility for UEFI Shell.
+
+USAGE: uRWEEPROM.efi [/r|/w|/h] [Bank] [start_address] [end_address] [hex string|[ASCII string]] [/e] [ENV_name]
+       /r:              Read  data from EEPROM.
+       /w:              Write data into EEPROM.
+       /h:              Print uRWEEPROM information and format content.
+       Bank:            00-07(hex)
+       start_address:   00-ff(hex)
+       end_address:     00-ff(hex)
+       You have two option to write data to EEPROM.
+       (1)  hex  string: two character is combine one data.
+       EX: 616263
+       (2) ASCII string: one character is equal one data.
+       EX: [abc]
+       /e:              Set environment variable from EEPROM data.
+       ENV_name:        environment variable name.
+
+For example:
+       If you want to read data from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5
+       If you want to set environment variable from EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /r 0 A0 A5 /e variable_name
+       If you want to write data( hex string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 616263646566
+       If you want to write data( ASCII string ) into EEPROM(Bank 0, offset A0h~A5h):
+       uRWEEPROM.efi /w 0 A0 A5 [abcdef]
+       If you want to get help:
+       uRWEEPROM.efi /h
+
+Return Value:
+0: Pass
+1: Fail
+
+Known Issues:
+N/A
+
+Notice:
+This utility is only support C38 Lenovo projects.
+
+***************************************************************************************************
