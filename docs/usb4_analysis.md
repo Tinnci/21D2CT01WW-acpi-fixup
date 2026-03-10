@@ -1223,7 +1223,7 @@ GNBG 包含 PCIe/USB4 端口配置。两者大小相同 (0x270) 但有 **4处端
 | **A: SPI 刷写量产 BIOS+EC** | ✅ 最佳 | ⚠️ 已知变砖风险 | 完整 USB4 |
 | **B: 仅修改 APCB GNBG 位** | ⚠️ 理论可行 | 中等 | SS 可能工作, 无 UCSI |
 | **C: 运行时 SMN 写入 USB4 位** | ❌ 不可行 | PHY mux 需 AGESA 初始化序列 | — |
-| **D: SMU 邮箱命令启用 USB4** | ❓ 未验证 | 可能安全 | 需研究 SMU 消息 |
+| **D: SMU 邮箱命令启用 USB4** | ❌ 不可行 | 导致系统冻结 | 详见 §17 |
 
 #### 路径 B 详解: 仅修改 APCB
 
@@ -1242,3 +1242,90 @@ GNBG 包含 PCIe/USB4 端口配置。两者大小相同 (0x270) 但有 **4处端
 - APCB 有校验和, 需重新计算
 
 > **警告**: 修改 SPI Flash 需要 SPI 编程器和完整备份。操作失误会变砖。
+
+## 17. SMU 邮箱探测 (2026-03-10)
+
+### 17.1 SMU 固件信息
+
+```
+SMU Version:  69.40.0  (sysfs: /sys/devices/platform/AMDI0005:00/smu_fw_version)
+SMU Program:  0
+SMU IP Block: smu_v13_0_0 (Yellow Carp / Rembrandt)
+ryzen_smu:    不可用 (内核模块不存在)
+```
+
+### 17.2 SMU 寄存器布局
+
+系统中存在 **两套** SMU 邮箱，共享同一 SMU 固件核心：
+
+| 邮箱 | 用途 | MSG 寄存器 | RESP 寄存器 | ARG 寄存器 |
+|------|------|-----------|------------|-----------|
+| **MP1 (amdgpu)** | GPU 电源管理 | C2PMSG_66 (+0x608) | C2PMSG_82 (+0x648) | C2PMSG_83+ |
+| **RSMU (平台)** | AGESA/平台功能 | C2PMSG_10 (+0x528) | C2PMSG_28 (+0x570) | +0x998 |
+
+SMN 非零寄存器快照：
+
+```
+MP1 Area:
+  C2PMSG_10 [0x03B10528] = 0x0000001C  (RSMU 最后消息 ID)
+  C2PMSG_28 [0x03B10570] = 0x00000001  (RSMU 响应: OK)
+  C2PMSG_30 [0x03B10578] = 0x00000001  (doorbell)
+
+RSMU Area:
+  [0x03B10A00] = 0x00000002
+  [0x03B10A08] = 0x0000000F
+  [0x03B10A0C] = 0x00000006
+  [0x03B10A10] = 0x00000003
+```
+
+### 17.3 RSMU GetSmuVersion 测试
+
+通过 RSMU 邮箱发送 `GetSmuVersion` (MSG=0x02):
+
+```
+Protocol: clear RESP → write ARG(0) → write MSG(0x02) → poll RESP
+Result:   ARG_BASE [0x03B10998] = 0x00452800
+Decoded:  69.40.0 — 完全匹配 sysfs 版本 ✓
+
+Side effects:
+  +0x9FC [0x03B109FC]: 0x00000001 → 0x00000000
+  +0xA00 [0x03B10A00]: 0x00000010 → 0x00000002
+```
+
+消息本身**成功执行**，但有严重副作用（见下节）。
+
+### 17.4 致命副作用：SMU 状态机阻塞 → 系统冻结
+
+RSMU 消息发送后约 22 秒（T+390s → T+412s），amdgpu 驱动报告：
+
+```
+[412s] amdgpu: SMU: I'm not done with your previous command:
+       SMN_C2PMSG_66:0x0000001A  SMN_C2PMSG_82:0x00000000
+[412s] amdgpu: Failed to disable gfxoff!
+[418s] amdgpu: Failed to export SMU metrics table!
+... (每 ~6 秒循环, 共 11 次)
+→ 系统最终完全冻结, 需要硬重启
+```
+
+**冻结因果链：**
+
+1. `smu_find_resp.py` 清零了 RESP 寄存器 (C2PMSG_28 = 0) 以发送 RSMU 消息
+2. RSMU 和 MP1 共享同一 SMU 核心 — RSMU 消息占用 SMU 处理队列
+3. 清零操作可能破坏了 SMU 内部状态机的同步标志
+4. amdgpu 的 MP1 命令 (0x1A = GfxOff 相关) 无法获得 SMU 响应
+5. C2PMSG_82 (MP1 RESP) 停留在 0x00000000 → amdgpu 无限等待
+6. GfxOff 禁用失败 → GPU 意外进入低功耗 → 显示冻结 → 系统不可用
+
+### 17.5 结论：路径 D 判定
+
+| 项目 | 结论 |
+|------|------|
+| SMU 可通信 | ✓ RSMU 邮箱可以发送消息并获得正确响应 |
+| 安全性 | ❌ **不安全** — 与 amdgpu MP1 邮箱冲突，导致 GPU 电源管理崩溃 |
+| USB4 相关消息 | 未测试 — 连 GetSmuVersion 都会冻结系统 |
+| 可修复性 | ❌ 无法安全地在运行时使用 RSMU 邮箱 |
+
+**路径 D 已关闭。** 剩余可行路径：
+
+- **路径 A**: SPI 刷写量产 BIOS + EC（最佳，但已知变砖风险）
+- **路径 B**: 仅修改 APCB 的 GNBG/FCHG/Token（中等风险，可能启用 SS）
