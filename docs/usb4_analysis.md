@@ -2115,3 +2115,263 @@ Production @0xD5000 (4096 bytes):
 5. **Strategy B 风险从 HIGH 降级为 MEDIUM-LOW** — 主要剩余风险是 APCB token 兼容性，而非签名验证
 
 > **行动建议**: 可以放心执行 flashrom APCB 补丁。PSP 安全链不会阻止修改后的 APCB 被 ABL 正常读取。唯一需确保的是 APCB checksum 正确 (补丁工具已保证)。
+
+---
+
+## §22 Lenovo OEM 服务工具分析
+
+**日期**: 2025-01-10
+**目标**: 分析项目根目录下 `thinkpadOEM/` 中两套 Lenovo OEM 服务工具，评估对 USB4 项目的可用性
+
+### 22.1 工具集概览
+
+项目中包含两套独立的 Lenovo 官方服务工具：
+
+#### A. Lenovo Golden Key U1 Tool V3.5.3 (`thinkpadOEM/LenovoUone/`)
+
+- **版本**: V3.5.3 (2021-07-22)
+- **用途**: "Lenovo PCSD Service Enablement" — 联想全产品线工厂/售后服务用 USB 启动盘
+- **启动方式**: UEFI 可直接启动 (<code>EFI/BOOT/BOOTX64.EFI</code>, 922KB)
+- **架构**: PE32+ AMD64 EFI_APP
+- **模式**: `INTERNAL_MODE=1` (内部模式)
+
+#### B. ThinkPad Maintenance Utilities V1.06 (`thinkpadOEM/ThinkPad Maintenance Utilities/`)
+
+- **版本**: V1.06 (2015-Jul-1), 作者 Masahiro Tokuno
+- **用途**: ThinkPad 专用维护/服务工具集
+- **声明**: "Lenovo Confidential - For development, service and manufacturing use only"
+- **启动方式**: UEFI 启动盘 (<code>EFI/Boot/BootX64.efi</code>, 784KB)
+- **高级模式**: `hide_adv=0` → Advanced Menu 已启用
+
+### 22.2 Golden Key U1 详细工具清单
+
+U1 工具包含针对不同 BIOS 平台的多个后端 EFI 工具：
+
+| 工具 | 大小 | 用途 | 协议/接口 |
+|------|------|------|-----------|
+| **ShellFlash64.efi** | 543KB | 全 BIOS 刷写/DMI 补丁 | FFS2, SecureFlash, UpdateCapsule, SMM |
+| **H2OSDE-Sx64.efi** | 345KB | Insyde BIOS Setup 编辑器 | Insyde IHISI, NVRAM (仅限 Insyde 平台) |
+| **LBGRW.efi** | 47KB | Lenovo BIOS Generic R/W | QNVS (ACPI NVRAM), EDK2 |
+| **LvarEfi64V231.efi** | 24KB | Lenovo UEFI 变量编辑器 | GetVariable/SetVariable, Lenovo 专有 GUID |
+| **EEPROMx64.efi (B)** | 10KB | 轻量 SN/MTM/UUID 读写 | UEFI RT Services |
+| **EEPROMx64.efi (5)** | 63KB | 完整 EEPROM 读写 | SwSMI 0xC0 → SMM → 4KB EEPROM |
+| **BIOS_LOCK.efi** | 10KB | BIOS 写保护锁/解锁 | PchSetup UEFI变量 → PchBiosLock |
+| **MBD3.efi** | 27KB | Machine Board Data 原始读写 | UDK2010, NVS hex R/W |
+| **PARR2.efi** | 23KB | 字符串解析辅助工具 | Shell 脚本辅助 |
+| **AMIDEEFIx64_XXX.efi** | 多版本 | AMI DMI 编辑器 | AMI BIOS 平台专用 |
+| **ldiag.EFI** | 904KB | Lenovo Diagnostics | 硬件诊断 |
+| **DEU.efi** | 161KB | Drive Erase Utility | 安全擦除 |
+
+### 22.3 关键工具深度分析
+
+#### 22.3.1 BIOS_LOCK.efi — BIOS 写保护控制
+
+```
+"Program to lock or unlock BIOS ROM FRO V540 - Version 1.0(2019/05/23)"
+"For Bitland approved purposes only"
+```
+
+**工作机制**:
+1. 读取 UEFI 变量 `PchSetup` (Intel PCH Setup)
+2. 修改 `PchBiosLock` 字段 (0=解锁, 1=锁定)
+3. 调用 `SetVariable` 写回
+
+**关键发现**: 此工具 **仅适用于 Intel PCH 平台** (V540 = Lenovo IdeaPad)。
+AMD 平台的 SPI 写保护由 SMN 寄存器 (`SPI_CNTRL0/1`) 控制，而非 PchSetup 变量。
+**对本项目: ❌ 不可用**
+
+#### 22.3.2 LBGRW.efi — BIOS Generic Read/Write
+
+```
+构建路径: d:\edk2\edk2\Build\MdeModule\DEBUG_MYTOOLS\X64\...\LBGRW\
+```
+
+**功能** (UTF-16LE 字符串提取):
+```
+/R UU    — 读 UUID         /S UU [Value]  — 写 UUID
+/R PN    — 读产品名称       /S PN [Value]  — 写产品名称
+/R LS    — 读序列号         /S LS [Value]  — 写序列号
+/R MT    — 读机型名称       /S MT [Value]  — 写机型名称
+/R GBT   — 读启动模式       /S LEB         — 设置 Legacy 启动
+/R T1V   — Type1 版本       /S UEB         — 设置 UEFI 启动
+/R KB    — 键盘 ID          /R CPU         — MB 板 CPU 类型
+/R MA    — MAC ID           /S SPM         — 设置电池船运模式
+/S SSB [on/off]              — 启用/禁用 Secure Boot
+/S SOO [on/off]              — 启用/禁用 OS Optimized Defaults
+/S MAB [on/off]              — 充/放电 主电池
+```
+
+**接口**: 使用 QNVS (ACPI Qualified NVS) 地址空间。
+**对本项目: ❌ 仅操作 DMI/SMBIOS 数据，无法触及 APCB 区域**
+
+#### 22.3.3 LvarEfi64V231.efi — Lenovo Variable Tool
+
+```
+|           Lenovo Variable Tool              |
+|              v2.31 Lenovo/LCFC 2020/09/21   |
+```
+
+**支持的变量名**: `/pn` (产品名), `/pjn` (项目名), `/mtm`, `/ln` (序列号), `/btid` (品牌),
+`/kbid` (键盘), `/epaid`, `/func` (功能标志), `/cust` (客户), `/fd` (家族名), `/at` (资产标签),
+`/sku`, `/oa3` (OA3 MSDM), `/slic` (OA2), `/ospn`, `/osdes`, `/mfgmode`, `/macapt`, `/region`
+
+**接口**: `GetVariable`/`SetVariable` — 通过 UEFI RT Services 读写 Lenovo 专有 NVRAM 变量。
+**对本项目: ❌ 操作 UEFI NVRAM 变量，非 SPI flash 中的 APCB 二进制数据**
+
+#### 22.3.4 EEPROM5 — SwSMI 驱动的 EEPROM 读写
+
+**工作流程** (readme.txt 摘要):
+1. 解析 `EEPROM.ini` 配置 — 获取命令定义、EEPROM 数据结构、SMI 端口
+2. 安装 EEPROM 驱动
+3. 发送 **SwSMI 0xC0** → SMM 处理器读取 4KB EEPROM 数据
+4. 通过 ini 定义的命令进行字段读写
+
+**EEPROM 数据映射** (EEPROM.ini):
+| 偏移 | 长度 | 字段 | 类型 |
+|------|------|------|------|
+| 0x000 | 0x41 | Product Name | astring |
+| 0x050 | 0x21 | Serial Number | astring |
+| 0x080 | 0x10 | UUID | GUID |
+| 0x090 | 0x41 | Project Name | astring |
+| 0x0E0 | 0x01 | KBID | byte |
+| 0x0E5 | 0x01 | Hidden Page | byte |
+| 0x0E6 | 0x01 | Secure Boot | byte |
+| 0x0F0 | 0x41 | Family | astring |
+| 0x1B0 | 0x41 | MTM | astring |
+| 0x200 | 0x21 | OA3 Key ID | astring |
+| 0x230 | 0x21 | MB Serial Number | astring |
+
+**对本项目: ❌ 访问 4KB 制造数据 EEPROM (VPD)，非 32MB SPI flash**
+
+#### 22.3.5 H2OSDE-Sx64.efi — Insyde Setup Design Editor
+
+含大量 SMBIOS/NVRAM 字符串提示。专为 Insyde H2O BIOS 设计。
+我们的 Z13 使用 Phoenix/AMD AGESA 固件，**非 Insyde 平台**。
+**对本项目: ❌ 平台不兼容**
+
+#### 22.3.6 ShellFlash64.efi — UEFI Capsule Flash
+
+`UpdateCapsule`, `CapsuleOnRam`, `SecureFlash` — 全 BIOS capsule 刷写工具。
+用于 `/patch /dus /dsm /dps /dvs` DMI 数据补丁。
+**对本项目: ⚠️ 理论上可刷全 BIOS，但我们已知量产 BIOS 会变砖 — 危险**
+
+### 22.4 ThinkPad Maintenance Utilities 详细分析
+
+内嵌 UEFI Shell + ThinkPad 专用工具集 (DEU.efi 中的字符串):
+
+```
+ThinkPad Maintenance Utilities V1.04(X64) Lenovo Confidential Nov.28.2014
+```
+
+**功能菜单**:
+1. **Write/Read/Delete Serial Numbers** — 序列号管理
+2. **Assign UUID** — UUID 分配
+3. **Update Configuration Area** — ECA Info, Brand name, Product ID, Type 11
+4. **Initialize EEPROM** — ⚠️ 清除所有系统标识数据、UUID、Config Data
+5. **Dump EEPROM** — 导出 EEPROM 区域所有数据
+6. **Copy/Update BIOS Settings** — V2.01:
+   - Copy BIOS Setting to file
+   - Update BIOS Setting from file
+   - Update Boot Order only from file
+7. **Program to exit MFG mode** — V0.93
+
+**配套 DOS 工具** (FLSHBIOS.SYS 驱动):
+| 工具 | 大小 | 用途 |
+|------|------|------|
+| ECAINF.EXE | 32KB | EC 信息读取 |
+| VPDUPDT.EXE | 53KB | VPD 数据更新 |
+| SERUPDT.EXE | 114KB | 序列号更新 |
+| ADMIN.EXE | 32KB | 管理工具 |
+| CFGUPDT.EXE | 24KB | 配置更新 |
+
+**型号数据库** (plnsrv.ini): 覆盖数百款 ThinkPad 型号 (至 X1 Carbon Gen 9, T14s Gen 2, X13 Gen 2 ~ 2021年)。**不包含 Z13 Gen 1 (21D2)**。
+
+**对本项目: ❌ "BIOS Settings" = UEFI Setup 变量，非 APCB 二进制数据**
+
+### 22.5 EEPROMB 写保护工作流
+
+EEPROMB 目录的脚本揭示了标准写保护流程：
+
+```nsh
+# eepromefi.nsh (EEPROMB 版本)
+BIOS_LOCK.efi U          # 步骤1: 解锁 BIOS
+EEPROMx64.efi /wsn %2    # 步骤2: 写入数据
+BIOS_LOCK.efi L          # 步骤3: 重新锁定
+
+# 对比: EEPROM5 版本 — 无 BIOS_LOCK 步骤
+EEPROMx64.efi /wsn %2    # 直接写入 (通过 SwSMI)
+```
+
+**关键区别**: EEPROMB 的 EEPROMx64.efi (10KB) 直接通过 UEFI RT Services 写入，需要先解锁 BIOS ROM；而 EEPROM5 的 EEPROMx64.efi (63KB) 通过 SwSMI → SMM 间接写入，SMM 已有特权，无需额外解锁。
+
+### 22.6 UEFI GUID 交叉引用
+
+对所有工具进行 UEFI GUID 扫描:
+
+| 工具 | GUID | 含义 |
+|------|------|------|
+| EEPROMx64-5 | 8BE4DF61-93CA-11D2-AA0D-… | gEfiGlobalVariableGuid |
+| ThinkPad BootX64 | 8BE4DF61-93CA-11D2-AA0D-… | gEfiGlobalVariableGuid |
+| ShellFlash64 | 8BE4DF61-93CA-11D2-AA0D-… | gEfiGlobalVariableGuid |
+| ShellFlash64 | EE4E5898-3914-4259-9D6E-… | gEfiFirmwareFileSystem2Guid (FFS2) |
+| DEU.efi | 8BE4DF61-93CA-11D2-AA0D-… | gEfiGlobalVariableGuid |
+
+**未发现**: 无 SPI Protocol GUID、无 SMM Communication GUID、无 AMD 特有 GUID。
+所有工具均走标准 UEFI 接口 (RT Services / Shell Protocol)，无直接硬件操作。
+
+### 22.7 SPI/Flash 关键字扫描
+
+| 工具 | 关键字命中 |
+|------|-----------|
+| LBGRW.efi | `QNVS` ×3 |
+| BIOS_LOCK.efi | `PchSetup` ×2, `PchBiosLock` ×1, `GetVariable` ×1 |
+| H2OSDE-Sx64.efi | `NVRAM` ×5, `Flash` ×1 |
+| ShellFlash64.efi | `Flash` ×31, `flash` ×39, `SecureFlash` ×3, `SMM` ×1 |
+
+**未发现**: 无 `APCB`、`apcb`、`SpiProtocol`、`flashrom`、`SmmComm` 命中。
+**结论**: 没有任何工具知道 APCB 的存在。
+
+### 22.8 综合评估与结论
+
+#### 对 USB4 项目的可用性判定
+
+| 工具 | 可用性 | 原因 |
+|------|--------|------|
+| BIOS_LOCK.efi | ❌ | Intel PCH 专用，AMD 无 PchSetup 变量 |
+| LBGRW.efi | ❌ | 仅操作 DMI/SMBIOS (QNVS)，非 APCB |
+| LvarEfi64V231.efi | ❌ | UEFI NVRAM 变量编辑，APCB 在 raw SPI flash |
+| EEPROMx64.efi (两版) | ❌ | 制造 EEPROM (4KB VPD)，非 32MB SPI |
+| H2OSDE-Sx64.efi | ❌ | Insyde 平台专用，Z13 用 Phoenix/AGESA |
+| ShellFlash64.efi | ⚠️ 危险 | 全 BIOS capsule 刷写 → 已知量产 BIOS 变砖 |
+| MBD3.efi | ❌ | Machine Board Data (VPD NVS)，非 APCB |
+| ThinkPad Maint BootX64 | ❌ | BIOS Settings = Setup 变量，非 APCB 二进制 |
+| ldiag.EFI | ❌ | 硬件诊断，无配置修改能力 |
+| DEU.efi | ❌ | 驱动器擦除工具 |
+
+#### 技术层次分析
+
+```
+┌─────────────────────────────────────────────────┐
+│ Level 4: 用户界面 (BIOS Setup / Shell 菜单)     │ ← ThinkPad Maint Utilities
+├─────────────────────────────────────────────────┤
+│ Level 3: UEFI 变量 (GetVariable/SetVariable)    │ ← Lvar, LBGRW, H2OSDE, BIOS_LOCK
+├─────────────────────────────────────────────────┤
+│ Level 2: SMM 服务 (SwSMI → Ring -2)             │ ← EEPROMx64-5 (via SwSMI 0xC0)
+├─────────────────────────────────────────────────┤
+│ Level 1: Capsule 更新 (UpdateCapsule/FFS)       │ ← ShellFlash64
+├─────────────────────────────────────────────────┤
+│ Level 0: SPI Flash 直接读写 (SPI Protocol/MMIO) │ ← flashrom ★ (我们需要的层次)
+├─────────────────────────────────────────────────┤
+│     APCB 数据: SPI Flash @ 0x440000-0x470000    │ ← 目标区域
+└─────────────────────────────────────────────────┘
+```
+
+**核心问题**: 所有 Lenovo OEM 工具均工作在 Level 1-4，通过 UEFI 标准接口或 SMM 服务间接访问固件。**没有任何工具提供 Level 0 的 SPI flash 直接读写能力**。APCB 存储在 raw SPI flash 中，不在 UEFI 变量存储或 EEPROM VPD 区域中。
+
+#### 最终结论
+
+> **Lenovo OEM 服务工具对本 USB4 项目无直接帮助。** 它们设计用于工厂制造流程(SN/MTM/UUID分配)和售后服务(BIOS 设置备份/恢复)，均通过 UEFI 标准接口操作 NVRAM 变量，不具备 SPI flash 直接操作能力。
+>
+> **Strategy B (flashrom APCB 26字节补丁) 仍然是唯一可行路径。** 无替代方案。
+>
+> 这些工具的分析进一步确认了一个事实：Lenovo 自身的高级服务工具也不直接修改 APCB — APCB 被视为固件构建时的静态配置，不在运行时或服务流程中被修改。这间接佐证了 APCB 修改后被 ABL 正常读取的安全性（只要 checksum 正确）。
