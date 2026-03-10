@@ -1539,3 +1539,182 @@ thunderbolt 驱动发现 USB4 域, 但 UCSI 仍不可用 (EC 限制)。
 | `scripts/apcb_usb4_patch.py` | 补丁生成工具 (自验证) |
 | `build/spi_usb4_patched_*.bin` | 补丁后 SPI 镜像 (32MB) |
 | `firmware/spi_dump/bios_dump_*.bin` | 原始 SPI dump (恢复用) |
+
+---
+
+## §19 固件封装分析：FL1 vs FL2 与 Flash 芯片架构
+
+**日期**: 2025-03-10  
+**目标**: 完整解析 Lenovo BIOS 更新包中 FL1/FL2 的结构和用途，澄清 flashrom 检测到"两个 SPI ROM"的机理
+
+### 19.1 FL1 封装结构 (`$0AN3G00.FL1`, 34,558,032 bytes)
+
+FL1 是**完整的 32MB 主 SPI Flash 镜像**，包裹在 Lenovo 胶囊格式中：
+
+```
+偏移         大小         内容
+─────────────────────────────────────────────────────
+0x0000000    0x50         Lenovo Capsule Header
+                          GUID: CE5CFA7D-0CE2-4974-B866-A367F9E85481
+0x0000050    0x48         Outer FV Header
+                          FS GUID: 7ac07354-cb3d-ca4d-bd6f-1e9689e7349a
+0x0000088    0x10         Block Map (8437 × 0x1000)
+0x00000B0    0x250        Extended Header
+                          GUID: d95fe99c-196e-e740-9a8f-ebad7f78e0c5
+0x0000300    0x20         FFS File Header (RAW, Large File)
+                          Data size: 0x2000020 (33,554,464 bytes)
+0x0000320    0x2000000    ★ Raw Flash Image (32MB)
+                          = 1:1 线性映射到整个 SPI 芯片
+```
+
+FL1 flash 镜像包含全部区域：Flash Descriptor、EC Shadow、PSP 固件、APCB 配置、UEFI PEI/DXE。
+BIOS 版本字符串位于 UEFI 区域：工程版 SPI 中为 `N3GET04W` (0x106C00D)，量产 FL1 中为 `N3GET74W` (0x119EE0D)。
+
+### 19.2 FL2 封装结构 (`$0AN3G00.FL2`, 327,968 bytes)
+
+FL2 是**独立的 EC (嵌入式控制器) 固件包**，供 Nuvoton NPCX 芯片内部 Flash 使用：
+
+```
+偏移         内容
+─────────────────────────────────────────────────────
+0x000-0x01F  _EC1 Header
+             Magic: _EC\x01
+             Total size: 327,968
+             Data size: 327,680
+             Checksum: 0x39B08081
+0x020-0x03F  _EC2 Header
+             Magic: _EC\x02
+             Total size: 323,904
+             Data size: 323,584
+0x040-0x05F  填充区 (0xEC pattern)
+0x060-0x1FF  填充/metadata
+0x200        ARM Cortex-M4F Vector Table
+             SP = 0x1008CCAD (NPCX SRAM)
+             Reset_Handler = 0x1008CD19
+0x200+       EC 运行时代码 + 内嵌 PD 固件
+```
+
+**FL2 内嵌版本字符串**:
+
+| 偏移 | 版本 | 用途 |
+|------|------|------|
+| 0x528 | N3GHT68W | EC 主固件版本 |
+| 0x3AC43 | N3GPD17W | PD 控制器固件 |
+| 0x3E6C4 | N3GPH20W | PD 控制器固件 |
+| 0x42145 | N3GPH70W | PD 控制器固件 |
+
+FL2 包含 USB-C Power Delivery 控制器固件，负责 Type-C 充电协商和 DP Alt Mode 切换。
+
+### 19.3 FL1 与 FL2 的关系
+
+**关键发现**：FL2 代码**不存在于** FL1（或主 SPI Flash）中。
+
+验证方法：从 FL2 提取多个 32 字节非零代码段，在 SPI 全 32MB 和 FL1 flash 镜像中搜索——仅找到 2 个偶然片段匹配 (SPI 0x081374 和 0x0813B4)，不构成有意义的代码重叠。
+
+| 项目 | FL1 | FL2 |
+|------|-----|-----|
+| 用途 | 完整 SPI Flash 镜像 | EC 内部 Flash 固件 |
+| 大小 | 34.5MB (封装) / 32MB (内容) | 328KB |
+| 写入目标 | 主 SPI Flash (W25Q256JW) | EC 内部 Flash (NPCX) |
+| 包含 EC 代码? | 是 (SPI EC Shadow 区域 0x10000-0xC0000) | 是 (EC 运行时代码) |
+| EC 代码相同? | **否** — FL1 的 EC 区域与 FL2 是不同的固件 |
+| BIOS? | 包含完整 UEFI + PSP + APCB | 无 |
+| PD 固件? | 无 | 包含 3 个 PD 版本 |
+
+### 19.4 SPI EC Shadow 区域分析
+
+主 SPI Flash 的 EC 区域 (0x10000-0xC0000, 704KB) 内容：
+
+```
+子块              工程 SPI vs 量产 FL1                     说明
+──────────────────────────────────────────────────────────────
+0x010000-0x020000  SAME  (84% FF)                          共享结构
+0x020000-0x030000  28,262B diff (eng=88%FF, prod=55%FF)    含 EFS 签名
+0x030000-0x040000  17,432B diff (eng=90%FF, prod=71%FF)
+0x040000-0x060000  SAME  (68% FF)                          共享代码
+0x060000-0x070000  SAME  (84% FF)
+0x070000-0x080000  25,988B diff (eng=100%FF, prod=60%FF)   工程版全空
+0x080000-0x0A0000  115,208B diff                           主要差异区
+0x0A0000-0x0B0000  10,057B diff (eng=100%FF, prod=84%FF)   工程版全空
+0x0B0000-0x0C0000  SAME  (100% FF, 空)
+```
+
+**统计**: 720,896 字节总计，72% 相同，27% 不同 (196,947 字节)。
+
+SPI EC Shadow 区域**无版本字符串**，无 `_EC1`/`_EC2` 头——是 PSP 在启动早期加载 EC 时使用的原始镜像格式，与 FL2 的封装格式完全不同。
+
+### 19.5 "两个 SPI ROM" 的真相
+
+flashrom 日志中出现：
+
+```
+Found chipset "AMD FP4".
+Found Winbond flash chip "W25Q256JW" (32768 kB, SPI) mapped at physical address 0xfe000000.
+Found Winbond flash chip "W25R256JW" (32768 kB, SPI) mapped at physical address 0xfe000000.
+Multiple flash chip definitions match the detected chip(s): "W25Q256JW", "W25R256JW"
+```
+
+**结论：这不是两个物理芯片，而是 flashrom 芯片数据库中同一颗 Winbond W25Q256JW 的两个兼容条目。**
+
+证据：
+- 两者映射到完全相同的物理地址 `0xfe000000`
+- 系统中无 MTD 设备 (`/proc/mtd` 不存在)
+- 无 SPI master (`/sys/class/spi_master/` 为空)
+- 无额外 SPI 设备 (`/sys/bus/spi/devices/` 为空)
+- 使用 `flashrom -c W25Q256JW` 可正常读取完整 32MB
+
+### 19.6 ThinkPad Z13 Flash 芯片架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ThinkPad Z13 Flash 架构                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────┐                │
+│  │ 主 SPI Flash (Winbond W25Q256JW, 32MB)      │ ← flashrom    │
+│  │ AMD SoC SPI 控制器总线                       │   可读写      │
+│  ├─────────────────────────────────────────────┤                │
+│  │ 0x000000  Flash Descriptor (64KB)            │               │
+│  │ 0x010000  EC Shadow Region (704KB)           │ FL1 更新      │
+│  │ 0x0C0000  PSP Firmware (×2, 3.6MB)           │               │
+│  │ 0x440000  APCB Config (×3)                   │               │
+│  │ 0xDF0000  Reserved (2MB)                     │               │
+│  │ 0x1000000 UEFI PEI + DXE (16MB)             │               │
+│  └─────────────────────────────────────────────┘                │
+│                                                                 │
+│  ┌─────────────────────────────────────────────┐                │
+│  │ EC 内部 Flash (Nuvoton NPCX, ~512KB)        │ ← flashrom    │
+│  │ EC 自有 SPI 控制器,独立总线                  │   不可见      │
+│  ├─────────────────────────────────────────────┤                │
+│  │ EC 运行时代码 (N3GHT68W)                     │               │
+│  │  - 键盘/触摸板扫描                           │ FL2 更新      │
+│  │  - 风扇控制 / 热管理                         │               │
+│  │  - 电源管理 / 充电                           │               │
+│  │  - UCSI (USB Type-C 接口)                    │               │
+│  │ 内嵌 PD 固件 (N3GPD/PH 系列)                │               │
+│  │  - Type-C PD 协商                            │               │
+│  │  - DP Alt Mode 切换                          │               │
+│  └─────────────────────────────────────────────┘                │
+│                                                                 │
+│  更新流程 (Lenovo BIOS Update):                                 │
+│  1. BootX64.efi 读取 FL1 → 解封装 → 写入主 SPI Flash           │
+│  2. BootX64.efi 读取 FL2 → 通过 EC mailbox → 写入 EC Flash     │
+│  3. 重启后 PSP 从主 SPI 加载 BIOS                               │
+│  4. EC 从自有 Flash 运行 (可能校验 SPI EC Shadow)               │
+│                                                                 │
+│  对 APCB 补丁的影响:                                            │
+│  我们仅修改主 SPI 的 APCB 区域 (26 字节), 不涉及 EC Flash      │
+│  flashrom 操作: flashrom -c W25Q256JW -p internal               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 19.7 小结
+
+| 问题 | 答案 |
+|------|------|
+| FL1 是什么? | 完整 32MB SPI Flash 镜像 (含 BIOS + PSP + APCB + EC Shadow + UEFI) |
+| FL2 是什么? | EC 内部 Flash 独立固件 (含 EC 代码 + PD 控制器固件) |
+| FL1 和 FL2 有代码重叠? | **否**, FL2 代码不在 FL1 中, 两者目标芯片不同 |
+| 有几个物理 Flash 芯片? | 2 — 主 SPI (32MB, flashrom 可见) + EC 内部 (~512KB, 不可见) |
+| flashrom "两个芯片"? | 同一颗 W25Q256JW 的两个数据库条目, 不是两个物理芯片 |
+| APCB 补丁涉及 FL2? | **否**, 仅操作主 SPI Flash |
