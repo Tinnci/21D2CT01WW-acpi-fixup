@@ -2368,9 +2368,57 @@ EEPROMx64.efi /wsn %2    # 直接写入 (通过 SwSMI)
 
 **核心问题**: 所有 Lenovo OEM 工具均工作在 Level 1-4，通过 UEFI 标准接口或 SMM 服务间接访问固件。**没有任何工具提供 Level 0 的 SPI flash 直接读写能力**。APCB 存储在 raw SPI flash 中，不在 UEFI 变量存储或 EEPROM VPD 区域中。
 
-#### 最终结论
+### 22.9 固件 Dump 能力评估
 
-> **Lenovo OEM 服务工具对本 USB4 项目无直接帮助。** 它们设计用于工厂制造流程(SN/MTM/UUID分配)和售后服务(BIOS 设置备份/恢复)，均通过 UEFI 标准接口操作 NVRAM 变量，不具备 SPI flash 直接操作能力。
+#### 可以 Dump 的内容
+
+| 功能 | 工具 | 目标 | 详情 |
+|------|------|------|------|
+| EEPROM 制造数据 | `EEP_DUMP` (bootx64.efi 内置) | Discrete EEPROM 芯片 | Block 0-7, SN/UUID/MTM/ECA 等 VPD 数据 |
+| BIOS 设置变量 | `SRSETUP` (bootx64.efi 内置) | UEFI NVRAM | 导出到 `SRSETUP.dat`, 仅 BIOS 菜单设置项 |
+| EC 标识信息 | `ECAINF.EXE` (DOS, 32KB) | EC 端口 | 显示型号/子型号/序列号，非固件内容 |
+
+**EEP_DUMP 详情**:
+```
+EEPROM Dump V2.13 (Discrete EEPROM)
+(C) Copyright LENOVO 2015.
+协议: LenovoEepromProtocol → TpReadEEPROMBlock
+范围: Block 0-7 (独立 EEPROM 芯片, 非 SPI flash)
+```
+
+**SRSETUP 详情**:
+```
+Copy/Update BIOS Setting (Ver.2.01)
+  1 - Copy   BIOS Setting to file   → SRSETUP.dat /C /UIA
+  2 - Update BIOS Setting from file  → SRSETUP.dat /U /N
+  3 - Update Boot Order only         → SRSETUP.dat /U /BOOT /N
+```
+
+**ECAINF.EXE 详情**:
+```
+构建: MS Run-Time Library (c) 1992, Microsoft Corp
+功能: 显示 EC 型号/子型号/序列号等标识信息
+限制: 仅读取 EC 标识寄存器, 不 dump EC 固件二进制
+```
+
+#### ❌ 不能 Dump 的内容
+
+| 目标 | 不可行原因 |
+|------|-----------|
+| **32MB SPI Flash** | 无 SPI Protocol/MMIO 直接读取能力 |
+| **EC 固件二进制** | ECAINF 仅读 EC 标识寄存器，非固件镜像 |
+| **BIOS ROM 镜像** | ShellFlash64 仅写/补丁，无 read-back 模式 |
+| **PSP 固件** | 所有工具完全不知道 PSP 的存在 |
+
+**关键区别**: `EEP_DUMP` dump 的是主板上 **独立的 Discrete EEPROM 芯片** (通过 `LenovoEepromProtocol` 访问)，与 flashrom dump 的 32MB SPI flash (Winbond W25Q256JW) 是 **完全不同的物理器件**。
+
+`FLSHBIOS.SYS` 是 IBM 1995-1996 年的 DOS 实模式 BIOS 刷写驱动 (2,053 bytes, "UPDTFLSH")，与 UEFI/SPI 无关。
+
+### 22.10 综合结论
+
+> **Lenovo OEM 服务工具对本 USB4 项目无直接帮助。** 它们设计用于工厂制造流程 (SN/MTM/UUID 分配) 和售后服务 (BIOS 设置备份/恢复)，均通过 UEFI 标准接口操作 NVRAM 变量或独立 EEPROM 芯片，不具备 SPI flash 直接读写能力。
+>
+> **固件 Dump 能力有限**: 可 dump EEPROM VPD 数据和 BIOS 设置变量，但不能 dump SPI flash、EC 固件或 PSP 固件。ECAINF.EXE 仅显示 EC 标识信息。
 >
 > **Strategy B (flashrom APCB 26字节补丁) 仍然是唯一可行路径。** 无替代方案。
 >
