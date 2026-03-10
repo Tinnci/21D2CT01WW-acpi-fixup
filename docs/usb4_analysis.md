@@ -2423,3 +2423,132 @@ Copy/Update BIOS Setting (Ver.2.01)
 > **Strategy B (flashrom APCB 26字节补丁) 仍然是唯一可行路径。** 无替代方案。
 >
 > 这些工具的分析进一步确认了一个事实：Lenovo 自身的高级服务工具也不直接修改 APCB — APCB 被视为固件构建时的静态配置，不在运行时或服务流程中被修改。这间接佐证了 APCB 修改后被 ABL 正常读取的安全性（只要 checksum 正确）。
+
+---
+
+## §23 Strategy B 执行：Primary APCB USB4 补丁刷写
+
+**日期**: 2025-03-10  
+**状态**: ✅ 已刷写并验证
+
+### 23.1 方案选择与风险评估
+
+经过 §18-§22 的全面分析，最终选择 **方案B: 仅修改 Primary APCB**，保留 Backup APCB 作为 ABL fallback 安全网。
+
+**风险评估结果**:
+| 风险项 | 评估 | 依据 |
+|--------|------|------|
+| PSP 验证 APCB | ❌ 不验证 | §21: 空 AMD_PUBLIC_KEY，无 BIOS_RTM_SIGNATURE，$BL2 无 APCB_DATA 条目 |
+| EC 与 SPI 共享 flash | ❌ 不共享 | FL2 内容未在 SPI dump 中找到，EC 使用独立 flash 芯片 |
+| ABL fallback 机制 | ✅ 有效 | Primary 校验失败时 ABL 回退到 Backup APCB |
+| Checksum 一致性 | ✅ 验证通过 | 8-bit byte sum mod 256 == 0，三个实例均 ✓ |
+
+### 23.2 补丁方案
+
+**策略**: 仅修改 Primary APCB (0x449000)，Backup (0x811000) 和 Small (0x446000) 保持原状。
+
+| SPI Offset | APCB 偏移 | Old | New | 说明 |
+|------------|-----------|-----|-----|------|
+| 0x449010 | +0x10 | 0x80 | 0xCA | Primary APCB checksum |
+| 0x44FE4A | +0x6E4A | 0x00 | 0x30 | GNBG Port1: USB4 NHI enable |
+| 0x44FE5A | +0x6E5A | 0x10 | 0x30 | GNBG Port2: NHI enable (bit5) |
+| 0x44FE68 | +0x6E68 | 0x00 | 0x02 | GNBG Port3: NHI device remap |
+| 0x44FE6A | +0x6E6A | 0x10 | 0x30 | GNBG Port3: NHI enable (bit5) |
+| 0x44FE6B | +0x6E6B | 0x00 | 0x20 | GNBG Port3: SuperSpeed enable |
+| 0x44FE7A | +0x6E7A | 0x10 | 0x30 | GNBG Port4: NHI enable (bit5) |
+| 0x450038 | +0x7038 | 0x00 | 0x01 | APCB_TOKEN_UID_FCH_GPP_CLK2_MAP |
+| 0x450268 | +0x7268 | 0x00 | 0x01 | APCB_TOKEN_UID_USB4_NHI_EN_0 |
+| 0x450318 | +0x7318 | 0x00 | 0x01 | APCB_TOKEN_UID_USB4_NHI_EN_1 |
+| 0x450338 | +0x7338 | 0x00 | 0x01 | APCB_TOKEN_UID_USB4_CM_EN |
+
+**总计**: 10 data bytes + 1 checksum = **11 bytes** (在 32MB SPI flash 中)
+
+### 23.3 执行过程
+
+#### Step 1: Fresh SPI Dump (刷写前备份)
+
+```
+$ sudo flashrom -p internal -c W25Q256JW -r fresh_backup_preflash_20260310.bin
+Reading flash... done.
+```
+
+**发现**: fresh dump 与原始 dump (2025-03-06) SHA256 不同：
+- 原始: `b6ed560fce88e250...`
+- Fresh: `9bd9bcb1f8450efd...`
+
+差异分析 (11,126 bytes 不同):
+- **Small APCB**: 8 bytes 变化 (ABL 运行时更新了时间戳/计数器和 checksum)
+- **Primary/Backup APCB**: 0 bytes 变化 ✓
+- **NVRAM 区域**: 11,118 bytes 变化 (正常的启动变量更新)
+
+→ **决定**: 基于 fresh dump 重新生成补丁，避免回滚 NVRAM 和 Small APCB 的正常更新。
+
+#### Step 2: 基于 Fresh Dump 生成补丁
+
+```
+$ python3 scripts/apcb_primary_only_patch.py build/fresh_backup_preflash_20260310.bin
+[3/5] Applying 10 patches to Primary APCB:
+  ✓ 全部 10 个数据补丁应用成功
+[4/5] Recalculating Primary APCB checksum:
+  New checksum: 0xCA, Verify sum: 0x00 ✓ VALID
+[4b/5] Backup APCB still untouched: 0x00 ✓
+Total bytes changed: 11
+```
+
+输出: `build/spi_primary_only_patch_20260310_193315.bin`
+
+#### Step 3: Diff 验证
+
+独立验证脚本确认：
+```
+Total different bytes: 11
+  全部 11 bytes 在 Primary APCB +0x10 ~ +0x7338 范围内
+Changes outside Primary APCB: 0 => SAFE
+```
+
+#### Step 4: flashrom 刷写
+
+```
+$ sudo flashrom -p internal -c W25Q256JW -w build/spi_primary_only_patch_20260310_193315.bin
+Reading old flash chip contents... done.
+Updating flash chip contents... Erase/write done from 0 to 1ffffff
+Verifying flash... VERIFIED.
+```
+
+#### Step 5: 独立 Readback 验证
+
+```
+$ sudo flashrom -p internal -c W25Q256JW -r build/post_flash_verify_20260310.bin
+$ sha256sum build/spi_primary_only_patch_20260310_193315.bin build/post_flash_verify_20260310.bin
+576fd1ec0e15f094b26202dedc26176065acb08ec0bf65cc24accdec46c883a0  (两文件完全一致)
+```
+
+### 23.4 文件清单
+
+| 文件 | 用途 | SHA256 前缀 |
+|------|------|------------|
+| `firmware/spi_dump/bios_dump_20260306_104957.bin` | 原始 SPI 备份 (3月6日) | `b6ed560f...` |
+| `build/fresh_backup_preflash_20260310.bin` | 刷写前 fresh 备份 | `9bd9bcb1...` |
+| `build/spi_primary_only_patch_20260310_193315.bin` | 刷入的补丁镜像 | `576fd1ec...` |
+| `build/post_flash_verify_20260310.bin` | 刷写后 readback 验证 | `576fd1ec...` |
+| `scripts/apcb_primary_only_patch.py` | Primary-only 补丁生成工具 | — |
+
+### 23.5 恢复命令
+
+如需回滚：
+```bash
+# 恢复到刷写前状态 (推荐):
+sudo flashrom -p internal -c W25Q256JW -w build/fresh_backup_preflash_20260310.bin
+
+# 恢复到原始出厂状态:
+sudo flashrom -p internal -c W25Q256JW -w firmware/spi_dump/bios_dump_20260306_104957.bin
+```
+
+### 23.6 下一步
+
+**重启测试**：reboot 后检查:
+1. 系统能否正常启动（ABL 是否接受修改后的 Primary APCB）
+2. `lspci | grep -i thunderbolt` — 是否出现 NHI 控制器
+3. `lsusb -t` — USB4/SuperSpeed 设备枚举
+4. `dmesg | grep -i "usb4\|thunderbolt\|nhi"` — 内核驱动加载
+5. 如果 Primary APCB 被拒绝 → ABL 应 fallback 到 Backup → 系统仍正常启动但无 USB4
