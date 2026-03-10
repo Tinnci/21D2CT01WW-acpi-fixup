@@ -1910,3 +1910,208 @@ dpc/dpm/dps/dsc/dsm/dss/dus/dvc = 其他子区域
 | BootX64.efi 的 SMI 刷写涉及 PSP 验证吗? | **可能** — SMM handler 可能会调用 PSP 验证固件完整性 |
 
 **结论**: flashrom 外部编程器方案仍然是最安全、最可控的 APCB 补丁应用方式。BootX64.efi 的逆向分析证实了它有多层安全检查，不适合注入修改过的固件。但 dummy key 检测逻辑的存在暗示工程样机可能运行在降级安全模式下，这可能简化了 PSP 的启动验证要求。
+
+---
+
+## §21 PSP 安全密钥与 APCB 验证范围分析
+
+> **目标**: 确定工程 BIOS 是否使用 dummy/测试密钥，以及 PSP 是否对 APCB 区域进行签名验证——直接影响 Strategy B (26字节 APCB 补丁) 的安全风险等级。
+
+### 21.1 PSP 目录结构全景
+
+AMD Rembrandt PSP 采用多级目录体系。通过 EFS (Embedded Firmware Structure) @0x20000 定位所有入口：
+
+```
+EFS @0x20000 (magic=0x55AA55AA)
+├── PSP_DIR  → 0xC1000 ($PSP L1, 2 entries → combo pointers)
+├── PSP_COMBO → 0xC2000 ($PSP L1, 同上)
+└── BIOS_DIR  → 0x0 (未设置! BIOS 通过 PSP combo 间接引用)
+
+$PSP L1 @0xC1000:
+├── [0x48] BIOS_L2_B_DIR → 0xC3000 (combo BIOS 目录, 非标准魔数)
+└── [0x4A] SEC_BIOS_DIR  → 0xC4000 (combo 备份目录)
+
+$PL2 (PSP Level 2) @0xC5000: 43 entries (Engineering)
+├── [0x00] AMD_PUBLIC_KEY         @0x000400 (0x440 bytes) ★
+├── [0x01] PSP_FW_BOOT_LOADER    @0x000900
+├── [0x09] AMD_SEC_DBG_PUBLIC_KEY @0x06E200 (0x440 bytes) ★
+├── [0x0B] AMD_SOFT_FUSE_CHAIN   val=0xC001 ★
+├── [0x22] SEC_POLICY             @0x0CA000 (0x1000 bytes) ★
+├── [0x49] SEC_PSP_DIR            @0x380000
+└── ... (43 entries total: SMU, TrustOS, ABL, etc.)
+
+$BL2 (BIOS Level 2) @0x445000: 19 entries (Engineering)
+├── [0x05] BIOS_RTM_FIRMWARE     @0x000400 (0x340 bytes) ★
+├── [0x68] AP_BL                 @0x004000
+├── [0x64] APOB_DATA             @0x037000
+├── [0x66] MP5_FW                @0x043500
+└── ⚠️ 无 APCB_DATA (0x60) 条目!
+└── ⚠️ 无 BIOS_RTM_SIGNATURE (0x6A) 条目!
+```
+
+**关键发现**: 工程 BL2 中**完全没有 APCB_DATA 和 BIOS_RTM_SIGNATURE 条目**。APCB 不在 PSP 目录注册范围内。
+
+### 21.2 AMD 根密钥分析 — 空白密钥槽
+
+```
+AMD_PUBLIC_KEY @SPI 0x400 (1088 bytes):
+  Engineering SHA256: 769b7cd9026948adacd8471bc117a9a1ebb2cd7ed9c4fbfdfcd71a61c604ff48
+  Production  SHA256: 769b7cd9026948adacd8471bc117a9a1ebb2cd7ed9c4fbfdfcd71a61c604ff48
+  内容: 全部 0xFF ← 完全空白!
+  两者完全一致: ✅
+
+AMD_SEC_DBG_PUBLIC_KEY:
+  Engineering @0x6E200: SHA256 同上 → 全部 0xFF
+  Production  @0x70400: SHA256 同上 → 全部 0xFF
+  两者完全一致: ✅
+```
+
+**结论**: SPI 中的 AMD 公钥槽是**空的** (全 0xFF)。AMD PSP 根密钥烧录在 CPU 硅片的 OTP (One-Time Programmable) 熔丝中，不依赖 SPI 闪存中的密钥槽。这不是"dummy key"——而是**根本没有 SPI 级密钥验证链**。
+
+### 21.3 软熔丝链 (Soft Fuse Chain) — 工程 vs 量产
+
+```
+Type 0x0B — AMD_SOFT_FUSE_CHAIN_01 (值内联在目录条目中):
+
+  Engineering: 0x0000C001 = 0000_0000_0000_0000_1100_0000_0000_0001
+  Production:  0x3000C041 = 0011_0000_0000_0000_1100_0000_0100_0001
+  XOR (差异): 0x30000040 = 0011_0000_0000_0000_0000_0000_0100_0000
+```
+
+| Bit | 含义 | 工程 | 量产 | 差异 |
+|-----|------|------|------|------|
+| 0 | PLATFORM_SECURE_BOOT_EN | 1 | 1 | — |
+| 1 | DISABLE_AMD_BIOS_KEY_USE | 0 | 0 | — |
+| 2 | DISABLE_AMD_KEY_USAGE | 0 | 0 | — |
+| 6 | **DISABLE_SECURE_DEBUG** | **0** | **1** | **← 关键!** |
+| 14 | PLATFORM_MODEL_ID | 1 | 1 | — |
+| 28-29 | (高级安全限制) | 0 | 1 | ← 额外限制 |
+
+**关键差异**:
+- **Bit 6** = 0 (工程): 安全调试**未禁用** → 调试通道开放
+- **Bit 6** = 1 (量产): 安全调试**已禁用** → 生产锁定
+- **Bits 28-29** (量产额外设置): 可能是反回滚保护或平台绑定标志
+
+> 工程 BIOS 运行在**开发安全模式**下——调试端口可用，安全限制更少。
+
+### 21.4 BIOS RTM (Root of Trust for Measurement) — 空白!
+
+```
+BIOS_RTM_FIRMWARE (type 0x05) → SPI @0x400, size 0x340:
+  Engineering: 全部 0xFF ← RTM 数据区完全空白!
+  Production:  全部 0xFF ← 同样空白!
+
+BIOS_RTM_SIGNATURE (type 0x6A):
+  Engineering: $BL2 中不存在此条目!
+  Production:  $BL2 中不存在此条目!
+```
+
+**RTM 机制分析**:
+- BIOS_RTM_FIRMWARE 定义 PSP 在启动时需要度量/验证的 BIOS 区域范围
+- 该条目指向 SPI 0x400 (与 AMD_PUBLIC_KEY 重叠)，内容全部为 0xFF
+- **没有 BIOS_RTM_SIGNATURE** 意味着没有签名可用于验证
+- **结论: PSP 的 BIOS RTM 验证在此平台上完全无效** — 既无度量范围定义，也无签名数据
+
+### 21.5 PSP 对 APCB 区域的引用 — 完全缺失
+
+通过遍历所有 $PL2 和 $BL2 目录条目的绝对地址引用：
+
+```
+PSP $PL2 目录 (Engineering primary + backup):
+  → 无任何条目引用 APCB 区域 (0x440000-0x470000) ✓
+
+PSP $PL2 目录 (Production primary + backup):
+  → 无任何条目引用 APCB 区域 (0x440000-0x470000) ✓
+
+BIOS $BL2 目录 (Engineering primary + backup):
+  → 无 APCB_DATA (0x60) 条目 ✓
+  → 无 BIOS_RTM_SIGNATURE (0x6A) 条目 ✓
+
+BIOS $BL2 目录 (Production primary + backup):
+  → 有 APCB_DATA type=0x20000060 sz=0x3000 @0x1000 (BL2 内部相对偏移)
+  → 无 BIOS_RTM_SIGNATURE (0x6A) 条目 ✓
+```
+
+**关键发现**: 
+1. PSP 固件目录 ($PL2) 在工程和量产版中**都不引用 APCB 区域**
+2. 工程 BIOS 目录 ($BL2) **完全缺少 APCB 注册条目**
+3. 即使量产版有 APCB 条目，也**没有对应的 RTM 签名**
+4. **APCB 不在任何 PSP 签名验证范围内**
+
+### 21.6 SEC_POLICY 对比
+
+```
+Engineering @0xCA000 (4096 bytes):
+  SHA256: c001d66ebb89787b5e2adc480b2356db4e695d2661184aa6f1ab4ce8d9bce7cd
+  结构: ARM Thumb2 代码 (含 "CryptoModExp Invalid Parameter exiting..." 字符串)
+  特征: 加密模块的验证例程代码
+
+Production @0xD5000 (4096 bytes):
+  SHA256: 92555970a36c5c7129039c0191062738ee3e54416f33d9c62df527a072e37aec
+  结构: 偏移表 + ARM Thumb2 代码 (不同结构)
+  特征: 策略表驱动的安全检查
+
+两者完全不同: 不同的安全执行策略。
+```
+
+工程版 SEC_POLICY 包含明文加密验证代码；量产版使用策略表间接跳转。这表明工程版的安全执行路径更简单、限制更少。
+
+### 21.7 证书体系差异 (补充 §20)
+
+| 证书 | 工程 SPI | 量产 FL1 | 含义 |
+|------|----------|----------|------|
+| Lenovo Ltd. Root CA 2012 | ✅ @0x10030E0 | ✅ @0x1F05632 | 根 CA |
+| ThinkPad Product CA 2012 | ✅ @0x100316E | ✅ @0x1F056C0 | 产品 CA |
+| Lenovo Ltd. PK CA 2012 | ❌ | ✅ @0x1F0426D | Platform Key CA |
+| Lenovo Ltd. KEK CA 2012 | ❌ | ✅ @0x1F04650 | Key Exchange Key CA |
+| RSA 结构总数 | **66** | **48** | 工程反而更多 |
+
+工程版缺少 Platform Key CA 和 KEK CA，但总 RSA 结构数更多 (66 vs 48)——说明工程 BIOS 包含额外的调试/测试用密钥材料，但 UEFI Secure Boot 的 PK/KEK 链不完整。
+
+### 21.8 综合安全评估 — APCB 补丁风险降级
+
+```
+安全验证层级分析:
+
+层级 1: PSP 硅片 OTP 密钥 → 验证 PSP 固件本身
+  影响 APCB: ❌ (APCB 不是 PSP 固件)
+
+层级 2: PSP 目录完整性 ($PL2 checksums) → 验证目录结构
+  影响 APCB: ❌ (APCB 不在 $PL2 目录中)
+
+层级 3: BIOS RTM 验证 → 定义 PSP 度量的 BIOS 范围
+  影响 APCB: ❌ (RTM 内容全部 0xFF，无签名)
+
+层级 4: BIOS $BL2 目录 → 列出 APCB 位置
+  影响 APCB: ⚠️ (工程版无条目; 量产版有条目但无签名)
+
+层级 5: ABL/AGESA → 扫描 APCB magic 并校验 checksum
+  影响 APCB: ✅ (8位字节和校验, 我们的补丁维护此校验)
+
+层级 6: UEFI Secure Boot → 验证 OS 启动加载器
+  影响 APCB: ❌ (在 APCB 读取之后)
+```
+
+### 21.9 Strategy B 风险更新
+
+| 风险因素 | §18 评估 | §21 更新 | 原因 |
+|----------|----------|----------|------|
+| PSP 签名验证失败 | HIGH | **NONE** | PSP 不验证 APCB (无目录注册、无 RTM、无签名) |
+| ABL checksum 失败 | LOW | **LOW** | 补丁工具维护 8-bit checksum ✓ |
+| APCB 内容不兼容 | MEDIUM | **MEDIUM** | 工程 BIOS ABL 版本可能不支持某些 token |
+| SPI 写入失败/损坏 | LOW | **LOW** | flashrom 验证写入 ✓ |
+| 总体风险 | **HIGH** | **MEDIUM-LOW** | PSP 安全层完全不触及 APCB |
+
+### 21.10 最终结论
+
+1. **没有 dummy key** — SPI 密钥槽是**空的** (全 0xFF)，不是使用测试密钥，而是完全不使用 SPI 密钥
+2. **PSP 不验证 APCB** — 四重确认:
+   - $PL2 无 APCB 引用
+   - $BL2 无 APCB 条目 (工程版)
+   - RTM 全部空白
+   - 无 RTM 签名
+3. **工程 BIOS 安全更宽松** — 软熔丝 bit 6 = 0 (调试未禁用)，SEC_POLICY 更简单
+4. **APCB 仅受 ABL checksum 保护** — 我们的 26 字节补丁维护此校验 → **安全**
+5. **Strategy B 风险从 HIGH 降级为 MEDIUM-LOW** — 主要剩余风险是 APCB token 兼容性，而非签名验证
+
+> **行动建议**: 可以放心执行 flashrom APCB 补丁。PSP 安全链不会阻止修改后的 APCB 被 ABL 正常读取。唯一需确保的是 APCB checksum 正确 (补丁工具已保证)。
