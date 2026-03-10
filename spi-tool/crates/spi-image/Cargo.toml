@@ -1,0 +1,11 @@
+[package]
+name = "spi-image"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "AMD SPI flash image parser — EFS, PSP directories, APCB structures"
+
+[dependencies]
+anyhow.workspace = true
+byteorder.workspace = true
+serde.workspace = true

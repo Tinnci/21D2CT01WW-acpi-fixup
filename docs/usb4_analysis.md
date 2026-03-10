@@ -2552,3 +2552,129 @@ sudo flashrom -p internal -c W25Q256JW -w firmware/spi_dump/bios_dump_20260306_1
 3. `lsusb -t` — USB4/SuperSpeed 设备枚举
 4. `dmesg | grep -i "usb4\|thunderbolt\|nhi"` — 内核驱动加载
 5. 如果 Primary APCB 被拒绝 → ABL 应 fallback 到 Backup → 系统仍正常启动但无 USB4
+
+---
+
+## §24 APCB 补丁失败分析 — PSP/ABL 固件对比
+
+### 24.1 补丁重启后测试结果
+
+重启后检查结果 — **补丁完全无效**：
+
+```
+# PCI - 无 NHI/Thunderbolt 设备
+$ lspci | grep -i thunderbolt
+(空)
+
+# USB - Billboard 仍在 480M，SS 总线为空
+$ lsusb -t
+/:  Bus 06.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/2p, 10000M
+/:  Bus 05.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/2p, 10000M
+/:  Bus 04.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/4p, 5000M
+/:  Bus 03.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/4p, 480M
+    |__ Port 3: Dev 5, If 0, Class=Billboard, Driver=, 480M  ← 仍然是 USB 2.0
+/:  Bus 02.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/1p, 10000M
+/:  Bus 01.Port 1: Dev 1, Class=root_hub, Driver=xhci_hcd/2p, 480M
+```
+
+### 24.2 补丁字节验证
+
+通过 `flashrom -r /tmp/post_reboot_dump.bin` 取得重启后 SPI dump，逐字节验证：
+
+| SPI 偏移 | APCB +偏移 | 名称 | 值 | 状态 |
+|-----------|-----------|------|-----|------|
+| 0x449010 | +0x0010 | Checksum | 0xCA | ✅ 存活 |
+| 0x44FE4A | +0x6E4A | Port1 NHI | 0x30 | ✅ 存活 |
+| 0x44FE5A | +0x6E5A | Port2 NHI | 0x30 | ✅ 存活 |
+| 0x44FE68 | +0x6E68 | Port3 remap | 0x02 | ✅ 存活 |
+| 0x44FE6A | +0x6E6A | Port3 NHI | 0x30 | ✅ 存活 |
+| 0x44FE6B | +0x6E6B | Port3 SS | 0x20 | ✅ 存活 |
+| 0x44FE7A | +0x6E7A | Port4 NHI | 0x30 | ✅ 存活 |
+| 0x450038 | +0x7038 | FCH GPP CLK | 0x01 | ✅ 存活 |
+| 0x450268 | +0x7268 | USB4_NHI_0 | 0x01 | ✅ 存活 |
+| 0x450318 | +0x7318 | USB4_NHI_1 | 0x01 | ✅ 存活 |
+| 0x450338 | +0x7338 | USB4_CM | 0x01 | ✅ 存活 |
+
+**结论**：ABL 读取了 APCB（校验和有效、数据完整保留），但对 USB4 配置 **完全无反应**。
+
+### 24.3 SMN 寄存器对比 — 无变化
+
+重启后 SMN 寄存器扫描与补丁前完全一致：
+
+| SMN 地址 | 值 | 含义 |
+|-----------|-----|------|
+| 0x16600000 | 0xFFFFFFFF | USB IP Discovery **仍然禁用** |
+| 0x16C00000-0x16C20000 | 0x01100020 | USB4 PHY ×3 存在但未初始化 |
+| 0x16D20000 | 0x000054CD | USB4 Router 部分存在 |
+| 0x16C00420 | 0x0A0002A0 | SS Port 0: RxDetect（未连接）|
+| 0x16D00000 | 0x00000000 | NHI 区域：未初始化 |
+| 0x16400000 | 0xFFFFFFFF | XHCI via SMN 禁用 |
+
+Bus 01 仍为空 — 根端口 00:01.1 分配了资源但无子设备。
+
+### 24.4 PSP 固件目录对比 — 根因确认
+
+对比工程版 (N3GET04WE, 2021-09-09) 和量产版 (N3GET74W) SPI 镜像的 PSP 目录：
+
+**$PL2 PSP L2 目录：**
+
+| 项目 | 工程版 | 量产版 | 差异 |
+|------|--------|--------|------|
+| **总条目数** | **43** | **50** | 量产多 7 条 |
+| ABL2 (type 0x0C) | 0x020100 (131KB) | 0x023100 (143KB) | 量产大 **12KB** |
+| **ABL_POST (type 0x5F)** | **完全缺失** | **0x060000 (393KB)** | **量产独有** |
+| AGESA_BL (type 0x28) | 0x020890 | 0x022890 | 量产大 8KB |
+| DXIO_PHY (type 0x47) | 0x005100 | 0x006100 | 量产大 4KB |
+| DRTM (type 0x44) | 1 个实例 | 2 个实例 | 量产多 1 个 |
+| T86/T88 | 各 1 个 | 各 2 个 | 量产含 sub-variant |
+
+**$BL2 BIOS L2 目录：**
+
+| 项目 | 工程版 | 量产版 |
+|------|--------|--------|
+| **总条目数** | **19** | **27** |
+| BIOS_DIR (type 0x60) | 缺失 | 存在 |
+| MPIOPHY (type 0x6A) | 缺失 | 存在 |
+| T6D | 缺失 | 存在 |
+
+### 24.5 ABL 二进制 USB4 字符串搜索
+
+| 固件模块 | USB4 匹配数 | 示例 |
+|----------|------------|------|
+| **工程版 ABL2** | **0** | — |
+| 量产版 ABL2 | 2 | `"The SBRX of both Re-timer USB4 Ports are at logical high..."` |
+| 量产版 ABL_POST | (加密/压缩) | — |
+
+量产版 ABL2 包含 USB4 Re-timer/DXIO 初始化代码；工程版完全没有。
+
+### 24.6 根因诊断
+
+**工程版 BIOS (N3GET04WE, 2021-09-09) 的 ABL 固件 缺乏 USB4 初始化代码。**
+
+具体而言：
+1. **ABL_POST (type 0x5F, 393KB)** — 负责 post-memory 阶段 USB4/NHI 硬件初始化的模块 — 在工程版中 **完全不存在**
+2. **ABL2** — 工程版比量产版小 12KB，且不含任何 USB4 相关字符串/代码
+3. **DXIO_PHY** — 工程版比量产版小 4KB，可能缺少 USB4 PHY 配置
+4. **BIOS 目录** — 工程版缺少 MPIOPHY (type 0x6A) 等 USB4 相关模块
+
+APCB 补丁本身是正确的（校验和有效、字节存活、ABL 未回退到 Backup），但 ABL 代码中 **不存在处理 USB4_NHI / USB4_CM token 的逻辑**，所以这些值被 **静默忽略**。
+
+这符合时间线：工程 BIOS 日期 2021-09-09，早于 AMD Rembrandt USB4 支持的成熟阶段。
+
+### 24.7 剩余方案评估
+
+| 方案 | 风险 | 可行性 | 说明 |
+|------|------|--------|------|
+| ❌ APCB 补丁 | 低 | **已证实无效** | ABL 忽略 USB4 token |
+| ⚠️ PSP 区域替换 | **极高** | 理论可行 | 用量产 ABL2+ABL_POST 替换工程版；但 PSP 固件经 RSA 签名，密钥不匹配将拒绝加载 |
+| ⚠️ UEFI DXE 注入 | 中 | 不确定 | 从量产 BIOS 提取 AmdUsb4Dxe 模块通过 UEFI Shell 加载；但 ABL 未初始化 NHI 硬件，DXE 阶段无法补救 |
+| ⚠️ 刷写完整量产 BIOS | **极高** | 之前导致变砖 | 量产 BIOS 可能因 CPU stepping/fuse 不匹配无法启动 |
+| ✅ 回滚 APCB 补丁 | 无 | 立即可行 | `flashrom -w build/fresh_backup_preflash_20260310.bin` |
+
+### 24.8 结论
+
+USB4/USB-C SuperSpeed 在此工程样机上无法通过软件/固件补丁实现。根本限制在于 **PSP ABL 固件本身缺少 USB4 初始化代码**，而 PSP 固件经 AMD 签名验证，无法替换为量产版。
+
+该机器的 USB-C 端口将永远停留在 USB 2.0 模式（通过 XHCI Billboard 设备），除非获得：
+1. AMD 为此工程 CPU stepping 签名的更新 ABL 固件（不现实）
+2. 绕过 PSP 签名验证的方法（安全研究级别的挑战）

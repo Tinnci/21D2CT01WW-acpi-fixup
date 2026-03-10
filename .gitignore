@@ -5,3 +5,11 @@ firmware/spi_dump/*.log
 firmware/bios_update/extracted/
 firmware/bios_update/iso_extract/
 n3gur27w.iso
+
+# Build artifacts (SPI images too large for git)
+build/*.bin
+spi-tool/target/
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
