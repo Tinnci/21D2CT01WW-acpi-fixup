@@ -1329,3 +1329,213 @@ RSMU 消息发送后约 22 秒（T+390s → T+412s），amdgpu 驱动报告：
 
 - **路径 A**: SPI 刷写量产 BIOS + EC（最佳，但已知变砖风险）
 - **路径 B**: 仅修改 APCB 的 GNBG/FCHG/Token（中等风险，可能启用 SS）
+
+## 18. SPI Flash 安全刷写策略 (2026-03-10)
+
+### 18.1 FL1 封装结构解析
+
+量产 BIOS 更新文件 (`$0AN3G00.FL1`) 的精确结构：
+
+```
+偏移        大小        内容
+0x0000000   0x50        Lenovo 胶囊头 (GUID: CE5CFA7D-0CE2-4974-B866-A367F9E85481)
+0x0000050   0x2B0       外层 Firmware Volume 头 (FV + FFS RAW 封装)
+  ├─ FV Header     0x48 bytes (FS GUID: 7ac07354-cb3d-ca4d-bd6f-1e9689e7349a)
+  ├─ Block Map     0x10 bytes (8437 × 0x1000)
+  ├─ Ext Header    0x250 bytes (GUID: d95fe99c-196e-e740-9a8f-ebad7f78e0c5)
+  └─ FFS Header    0x20 bytes (RAW, Large File, size=0x2000020)
+0x0000320   0x2000000   ★ Raw Flash Image (32MB = SPI dump 完全大小)
+0x2000320   0x0F4D30    尾部 FV 填充/对齐
+
+总大小: 34,558,032 bytes (0x20F5050)
+```
+
+**关键发现**: FL1[0x320] 即为 SPI Flash 地址 0x000000，1:1 线性映射。
+
+### 18.2 工程版 vs 量产版: 字节级对比
+
+| 区域 | SPI 范围 | 大小 | 差异 | 占比 | 风险 |
+|------|----------|------|------|------|------|
+| Flash Descriptor | 0x000000-0x010000 | 64KB | 15B | 0.0% | CRITICAL |
+| EC Firmware | 0x010000-0x0C0000 | 704KB | 197KB | 27.3% | EXTREME |
+| PSP Primary | 0x0C0000-0x440000 | 3.6MB | 2.9MB | 79.7% | EXTREME |
+| **APCB Primary** | **0x440000-0x470000** | **192KB** | **22KB** | **11.2%** | **HIGH** |
+| PSP Backup | 0x470000-0x800000 | 3.7MB | 3.1MB | 82.1% | EXTREME |
+| **APCB Backup** | **0x800000-0x830000** | **192KB** | **79KB** | **40.3%** | **HIGH** |
+| PSP/APCB Copies | 0x830000-0xDF0000 | 5.9MB | 5.5MB | 91.7% | EXTREME |
+| Reserved | 0xDF0000-0x1000000 | 2.1MB | 550B | 0.0% | LOW |
+| UEFI PEI | 0x1000000-0x10A0000 | 640KB | 198KB | 30.2% | HIGH |
+| UEFI DXE Vol 1 | 0x10A0000-0x1580000 | 5.0MB | 357KB | 7.0% | MEDIUM |
+| UEFI Bridge | 0x1580000-0x15E0000 | 384KB | 311KB | 79.0% | MEDIUM |
+| **UEFI DXE Vol 2** | **0x15E0000-0x1830000** | **2.4MB** | **0B** | **0.0%** | **—** |
+| UEFI DXE Vol 3 | 0x1830000-0x1F10000 | 7.0MB | 7.1MB | 98.7% | MEDIUM |
+| NVRAM/Tail | 0x1F10000-0x2000000 | 960KB | 440KB | 44.7% | HIGH |
+| **总计** | | **32MB** | **20.2MB** | **60.3%** | |
+
+UEFI DXE Volume 2 (0x15E0000-0x1830000) **完全相同** — 证实两个固件共享基础 DXE 模块集。
+
+### 18.3 策略评估矩阵
+
+#### 策略 A: 全量刷写量产 BIOS (❌ 已知变砖)
+
+```
+刷写范围: 全部 32MB
+变更量: 20.2MB (60.3%)
+风险: ☠️ 极高 — 已确认导致变砖
+原因: PSP 固件校验 CPU 熔丝值, 工程样片 CPU 与量产 PSP 不兼容
+恢复: 需 SPI 编程器刷回原始 dump
+```
+
+#### 策略 B: APCB-Only 最小补丁 (✓ 推荐方案)
+
+```
+刷写范围: 仅 APCB 区域 (3 个 APCB 实例内)
+变更量: 26 字节 (0.000077%)
+风险: ⚠️ 中等 — APCB 校验和已正确重算
+成功概率: ~40% — 取决于工程版 PSP 是否包含 USB4 NHI 初始化代码
+恢复: SPI 编程器刷回原始 dump (已有完整备份)
+```
+
+#### 策略 C: APCB + 选择性 UEFI DXE (备选)
+
+```
+刷写范围: APCB + UEFI DXE Vol 3 (0x1830000-0x1F10000)
+变更量: ~7.1MB
+风险: ⚠️ 中-高 — DXE 模块可能依赖 PEI 阶段初始化
+目的: 获取量产版的 USB4 相关 DXE 驱动 (UcsiDriver, NhiDxe 等)
+限制: PEI 阶段仍为工程版, 可能无法正确移交 USB4 设备
+```
+
+### 18.4 推荐方案: APCB-Only 补丁 (策略 B) 详细规格
+
+#### 修改清单 (26 字节)
+
+**主 APCB @0x449000 (uid=0x269C, 共 11 字节 + 校验和):**
+
+| SPI 地址 | APCB 内偏移 | 字段 | 原值 | 新值 | 说明 |
+|----------|------------|------|------|------|------|
+| 0x449010 | +0x10 | Checksum | 0x80 | 0xCA | 校验和重算 |
+| 0x44FE4A | GNBG+0xA6 | Port1 byte2 | 0x00 | 0x30 | USB4 模式使能 |
+| 0x44FE5A | GNBG+0xB6 | Port2 byte2 | 0x10 | 0x30 | NHI 使能 (bit5) |
+| 0x44FE68 | GNBG+0xC4 | Port3 byte0 | 0x00 | 0x02 | NHI 设备映射 |
+| 0x44FE6A | GNBG+0xC6 | Port3 byte2 | 0x10 | 0x30 | NHI 使能 (bit5) |
+| 0x44FE6B | GNBG+0xC7 | Port3 byte3 | 0x00 | 0x20 | NHI 设备映射 |
+| 0x44FE7A | GNBG+0xD6 | Port4 byte2 | 0x10 | 0x30 | NHI 使能 (bit5) |
+| 0x450038 | FCHG+0x24 | SS Enable | 0x00 | 0x01 | SuperSpeed 使能 |
+| 0x450268 | Token+val | 0xFEDB01F8 | 0x00 | 0x01 | USB4 PCIe Tunneling |
+| 0x450318 | Token+val | 0x4367CBD2 | 0x00 | 0x01 | USB4 NHI Enable |
+| 0x450338 | Token+val | 0x4967F4FC | 0x00 | 0x01 | USB4 Connection Mgr |
+
+**备份 APCB @0x811000 (uid=0x269C, 相同 11 字节 + 校验和):**
+与主 APCB 完全相同的偏移和修改，地址偏移 +0x3C8000。
+
+**小 APCB @0x446000 (uid=0x9F9494, 3 字节 + 校验和):**
+
+| SPI 地址 | 字段 | 原值 | 新值 | 说明 |
+|----------|------|------|------|------|
+| 0x446010 | Checksum | 0x0D | 0xAD | 校验和重算 |
+| 0x4460E6 | GNBG Port2 | 0x10 | 0x30 | USB4 模式 |
+| 0x4460F6 | GNBG Port3 | 0x10 | 0x30 | USB4 模式 |
+| 0x446106 | GNBG Port4 | 0x10 | 0x30 | USB4 模式 |
+
+#### APCB 校验和算法
+
+```
+算法: 8-bit checksum (sum of all bytes mod 256 == 0)
+位置: APCB header +0x10 (1 byte)
+验证: 修改后全字节求和 mod 256 == 0
+```
+
+#### 补丁工具
+
+```bash
+# 生成补丁镜像 (scripts/apcb_usb4_patch.py):
+python3 scripts/apcb_usb4_patch.py
+# → build/spi_usb4_patched_YYYYMMDD_HHMMSS.bin
+```
+
+### 18.5 刷写操作规程
+
+#### 前置条件
+
+- [ ] SPI 编程器 (CH341A / dediprog / 树莓派 + flashrom)
+- [ ] SOP8 测试夹 (Pomona 5250 或类似) 或拆焊 SPI
+- [ ] 原始 SPI dump 已备份 (SHA256: `b6ed560f...`)
+- [ ] 补丁镜像已生成 (26 字节差异验证通过)
+- [ ] 外部电源断开, 仅电池或完全断电
+- [ ] 拆机到主板层面, 定位 Winbond W25Q256JW
+
+#### 刷写步骤
+
+```bash
+# 1. 验证芯片连接
+flashrom -p ch341a_spi
+
+# 2. 刷写前读取验证
+flashrom -p ch341a_spi -r /tmp/pre_flash_readback.bin
+sha256sum /tmp/pre_flash_readback.bin
+# ↑ 应匹配: b6ed560fce88e250a3fd60b9f09ba4cc9bdcbe0a1fc3ed072a0f842dff75a3b1
+
+# 3. 刷写补丁镜像
+flashrom -p ch341a_spi -w build/spi_usb4_patched_*.bin
+
+# 4. 刷写后读回验证
+flashrom -p ch341a_spi -r /tmp/post_flash_readback.bin
+sha256sum /tmp/post_flash_readback.bin
+# ↑ 应匹配补丁镜像的 SHA256
+
+# 5. 比较确认仅 APCB 区域变更
+python3 -c "
+a = open('/tmp/pre_flash_readback.bin','rb').read()
+b = open('/tmp/post_flash_readback.bin','rb').read()
+diffs = [(i,a[i],b[i]) for i in range(len(a)) if a[i]!=b[i]]
+print(f'{len(diffs)} bytes differ')
+for addr,old,new in diffs:
+    print(f'  0x{addr:06X}: 0x{old:02X} → 0x{new:02X}')
+"
+# ↑ 应显示恰好 26 字节变更, 全部在 0x446xxx/0x449xxx-0x450xxx/0x811xxx-0x818xxx 范围
+```
+
+#### 验证启动
+
+```bash
+# 6. 开机后检查 USB4 NHI
+lspci | grep -i 'usb4\|thunderbolt\|nhi\|1022:164e'
+# 期望看到 USB4 NHI 设备 (PCI class 0x0C03 或 0x0D10)
+
+# 7. 检查 SuperSpeed 端口状态
+for p in /sys/bus/usb/devices/*/speed; do echo "$p: $(cat $p 2>/dev/null)"; done
+# 期望: 至少一个端口显示 5000/10000 而非之前的全 480
+
+# 8. 加载 Thunderbolt 驱动
+modprobe thunderbolt
+ls /sys/bus/thunderbolt/devices/
+
+# 9. 检查 UCSI (可能仍不工作, 因为 EC 未更新)
+modprobe typec_ucsi ucsi_acpi
+ls /sys/class/typec/
+```
+
+### 18.6 风险评估与应对
+
+| 风险 | 概率 | 影响 | 应对 |
+|------|------|------|------|
+| APCB 修改后无法 POST | 低 (~5%) | 高 | SPI 编程器刷回原始 dump |
+| POST 正常但 USB4 仍未启用 | 高 (~50%) | 低 | 工程版 PSP 可能不含 NHI init 代码 |
+| POST 正常, SS 工作但无 UCSI | 中 (~30%) | 中 | EC 需升级才能支持 UCSI |
+| 内存训练失败 (MEMG 完整性) | 极低 (~1%) | 高 | 补丁不修改 MEMG 区域 |
+| 工程版 PSP 拒绝新 APCB 配置 | 低 (~10%) | 高 | PSP 可能忽略未知 token |
+
+**最可能结果**: POST 正常, AGESA 读取新 GNBG 配置, 但因工程版 PSP 缺少 USB4 NHI 
+枚举代码, USB4 仍未出现在 PCI 总线上。SuperSpeed 信号路由可能在 PHY 层面改善。
+
+**最佳结果**: NHI 设备出现在 PCI Bus 01, SuperSpeed 端口从 RxDetect 变为 Polling/U0,
+thunderbolt 驱动发现 USB4 域, 但 UCSI 仍不可用 (EC 限制)。
+
+### 18.7 补丁文件清单
+
+| 文件 | 用途 |
+|------|------|
+| `scripts/apcb_usb4_patch.py` | 补丁生成工具 (自验证) |
+| `build/spi_usb4_patched_*.bin` | 补丁后 SPI 镜像 (32MB) |
+| `firmware/spi_dump/bios_dump_*.bin` | 原始 SPI dump (恢复用) |
