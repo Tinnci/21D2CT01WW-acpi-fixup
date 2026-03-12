@@ -3088,3 +3088,93 @@ for i in $(seq 0 13); do sudo i2cdetect -y $i; done
 | C. 闲鱼卖家方案 | 联系声称"刷 EC 后 USB3 恢复"的卖家获取具体操作 | 取决于沟通 |
 
 **方案 A 是最佳路径** — Lenovo 的 BootX64.efi 是 Insyde H2O IHISI 框架的 SecureFlash 工具，已确认支持 "EC Update"，并可通过参数跳过电池和 AC 适配器检查。所需文件（FL1 + FL2）已从 Lenovo ISO 中提取。
+
+---
+
+## §28 EC SPI Flash 物理识别与备份方案
+
+> 分析日期: 2026-03-15
+
+### 28.1 主板 SPI 架构
+
+通过原理图 (Z13G1-schem.png) 和 boardview (Z13G1-bv.png) 确认了双 SPI Flash 架构：
+
+| 标号 | 芯片型号 | 封装 | 连接 | 用途 |
+|------|----------|------|------|------|
+| **U2101** | W25Q256JWEIQ | WSON 8mm×6mm | AMD PSP + EC (共享) | 主 SPI — BIOS/UEFI 固件 (32MB) |
+| **U8505** | W74M25JWZEIQ | WSON 8mm×6mm | EC (主控) | EC SPI — EC 固件 + PD blob 存储 |
+
+两颗 SPI flash 均位于 **主板背面**。
+
+### 28.2 EC 芯片确认
+
+| 标号 | 芯片型号 | 说明 |
+|------|----------|------|
+| **UEC1** | NPCX997KA0BX | Nuvoton NPCX9 系列 EC, ARM Cortex-M4 |
+| **JEC1** | 未知 8-pin | 可能是 EC debug header (UART/SWD) 或测试点 |
+
+NPCX997KA0BX 确认了此前的推断 — Nuvoton NPCX9 系列，而非 NPCX7。
+
+### 28.3 之前 CH341A 操作的是哪个芯片
+
+**U2101 (W25Q256JWEIQ)** — 主 SPI Flash。
+
+flashrom 识别记录：
+```
+Found Winbond flash chip "W25Q256JW" (32768 kB, SPI) on ch341a_spi.
+```
+
+这是 §26 中 SPI 恢复操作的目标芯片。EC SPI (U8505) 此前未被操作过。
+
+### 28.4 为什么 EC 固件不在主 SPI 中
+
+- U2101 (主 SPI) 的 32MB dump 中搜索不到 `N3GHT15W` 字符串
+- 但 EC ACPI RAM 的 0xF0 偏移处能读到 `N3GHT15W` — 因为 EC 从 U8505 加载固件
+- FL2 文件 (327,968 bytes) 就是设计写入 U8505 的内容（经过 Lenovo/Insyde 封装格式）
+
+### 28.5 EC SPI 备份方案
+
+U8505 和 U2101 封装一致，操作方式相同：
+
+```bash
+# 1. 断电：拔掉 AC + 断开内置电池排线（防止 EC 抢 SPI 总线）
+# 2. 连接 CH341A 到 U8505 (WSON 夹子/探针)
+# 3. 注意电压：大概率 1.8V，与 U2101 相同
+
+# 探测芯片
+sudo flashrom -p ch341a_spi
+# 读两次，对比 hash
+sudo flashrom -p ch341a_spi -r ec_spi_backup_1.bin
+sudo flashrom -p ch341a_spi -r ec_spi_backup_2.bin
+sha256sum ec_spi_backup_*.bin
+```
+
+### 28.6 EC SPI 刷写要点
+
+备份完成后，可尝试将生产版 EC 固件写入 U8505：
+
+1. **FL2 vs 原始 SPI 格式** — FL2 是 Lenovo/Insyde 的打包格式（含 header、checksum 等），EC SPI 的原始布局可能不同。需要先备份原始 SPI 内容，分析布局后再确定写入方式。
+2. **风险评估**：
+   - 有备份 → 可逆（最坏情况下恢复备份）
+   - EC SPI 独立于主 SPI → 不会影响 BIOS
+   - EC 写入失误只影响 EC 功能（键盘、电源管理、PD 控制），系统可能无法正常启动但不会变砖（可再次 CH341A 恢复）
+3. **工程版 → 生产版的注意事项**：
+   - 工程版 EC (v0.15) 和生产版 EC (v1.xx) 的 SPI 布局可能不同
+   - 生产版 EC 可能对应不同的 BIOS 版本（需考虑 BIOS/EC 版本匹配）'
+
+### 28.7 EC 固件软件读取评估
+
+| 方法 | 可行性 | 说明 |
+|------|--------|------|
+| ACPI EC 接口 (port 0x62/0x66) | ❌ | 只能访问 256 字节共享 RAM，无法读 flash |
+| `/sys/kernel/debug/ec/ec0/io` | ❌ | 同上，仅 256 字节 EC ACPI RAM |
+| `ectool` (ChromeOS) | ❌ | 未安装，且需 EC 固件支持 flash read 命令 |
+| `fwupd` / ESRT | ❌ | 工程版 BIOS 无 ESRT，EC 未注册为 fwupd 设备 |
+| CH341A 物理读取 | ✅ | U8505 可物理访问，WSON 8mm×6mm，1.8V |
+
+### 28.8 JEC1 推测
+
+JEC1 为 8-pin 芯片/接口，封装小于 WSON 8mm×6mm，最可能是：
+- **EC UART debug header** — NPCX9 支持 UART console output
+- **SWD debug connector** — 用于 ARM Cortex-M4 调试
+- 以 "J" 前缀命名通常表示 connector/jumper/test point
