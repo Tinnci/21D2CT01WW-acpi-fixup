@@ -2,10 +2,27 @@
 authors = ["Tinnci <Tinnci@users.noreply.github.com>"]
 channels = ["conda-forge"]
 name = "acpi-fixup"
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-64"]
 version = "0.1.0"
 
 [tasks]
 
 [dependencies]
-python = ">=3.14.3,<3.15"
+python = ">=3.12,<4"
+
+[feature.spi-flash]
+platforms = ["osx-64"]
+
+[feature.spi-flash.dependencies]
+python = ">=3.12,<4"
+pyusb = "*"
+libusb = "*"
+
+[feature.spi-flash.tasks]
+spi-read = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -r spi_readback.bin", description = "Read SPI flash via CH341A" }
+spi-write-safe = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -w build/fresh_backup_preflash_20260310.bin", description = "Write original backup to SPI flash" }
+spi-verify = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -v build/fresh_backup_preflash_20260310.bin", description = "Verify SPI flash against original backup" }
+
+[environments]
+default = { features = [], solve-group = "default" }
+spi-flash = { features = ["spi-flash"], solve-group = "default" }
