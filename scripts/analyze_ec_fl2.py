@@ -12,7 +12,7 @@ import struct
 import sys
 from pathlib import Path
 
-FL2_PATH = Path(__file__).parent.parent / "firmware/bios_update/extracted/Flash/N3GET74W/$0AN3G00.FL2"
+FL2_PATH = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent.parent / "firmware/ec/N3GHT68W.FL2"
 
 def hexdump(data, offset=0, length=None):
     """Print hex dump of data."""
