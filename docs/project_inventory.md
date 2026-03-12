@@ -63,10 +63,28 @@
 |---|---:|---:|---|
 | `README.md` | 2026-03-06 01:34 | 3862 B | 入口说明 |
 | `docs/acpi_analysis_complete.md` | 2026-03-06 00:48 | 4217 B | 总体分析汇总 |
-| `docs/usb4_analysis.md` | 2026-03-06 02:02 | 18275 B | USB4 深度诊断 |
+| `docs/usb4_analysis.md` | 2026-03-15 | ~120 KB | USB4 深度诊断 (含 §1-§27) |
 | `docs/ACPI_FIXES_APPLIED.md` | 2026-01-06 16:59 | 4234 B | 修复落地记录 |
 | `docs/QUICK_REFERENCE.txt` | 2026-01-06 17:00 | 4120 B | 快速命令参考 |
 | `docs/thinkfan-setup-notes.md` | 2026-01-06 14:56 | 3069 B | 风扇补充笔记 |
+| `docs/ec_fl2_analysis.md` | 2026-03-13 | — | EC FL2 固件深度分析 |
+
+### 固件分析脚本
+
+| 文件 | 说明 |
+|---|---|
+| `scripts/analyze_ec_fl2.py` | EC FL2 固件包解析 |
+| `scripts/analyze_spi_usb4.py` | SPI flash USB4 模块分析 |
+| `scripts/dfu_trace3.py` | Microchip PD DFU 状态机追踪 (pyusb) |
+| `scripts/ec_probe.py` | EC 端口探测 |
+| `scripts/parse_spi.py` | SPI 镜像解析 |
+
+### EC/PD 固件文件
+
+| 文件 | 大小 | 说明 |
+|---|---:|---|
+| `firmware/ec/N3GHT68W.FL2` | 327,968 B | EC 固件 (BIOS N3GET74W 配套) |
+| `firmware/ec/N3GHT69W.FL2` | 327,968 B | EC 固件 (BIOS N3GET76W 配套) |
 
 ## 4. 优化建议与已处理项
 

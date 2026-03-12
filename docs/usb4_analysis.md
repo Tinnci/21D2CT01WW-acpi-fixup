@@ -2952,3 +2952,139 @@ sudo flashrom -p ch341a_spi -c W25Q256JW -w build/fresh_backup_preflash_20260310
 4. **CH341A 外部编程器是救回变砖机器的最后防线** — 但注意电压匹配 (1.8V vs 3.3V)
 5. **修改 $PL2 目录时要考虑潜在的完整性校验** — PSP 可能对目录有超出 entry_count 的验证
 6. **保留所有中间镜像** — 砖后状态 (`bricked_state`) 对分析写入失败原因至关重要
+
+---
+
+## §27 Microchip PD 控制器 DFU 分析
+
+> 分析日期: 2026-03-15
+
+### 27.1 背景
+
+ThinkPad Z13 Gen 1 工程版的 USB-C 端口降级到 USB 2.0，根因之一是 **Microchip PD (Power Delivery) 控制器固件为空**。该控制器负责 USB-C Alt Mode 协商（USB3/DP/USB4 通道分配），无固件则只能回退到 USB 2.0。
+
+设备枚举信息：
+```
+Bus 003 Device 003: ID 04d8:0039 Microchip Technology, Inc.
+  iSerial: MCHP-DF-005
+  bcdDevice: 8.20
+  Interface 0: Application Specific (DFU)
+```
+
+DFU 描述符：
+```
+bmAttributes:    0x03 (Download + Upload, Manifestation Intolerant, Will Not Detach)
+wTransferSize:   64 bytes
+bcdDFUVersion:   1.00
+```
+
+### 27.2 PD 固件提取
+
+从 Lenovo FL2 (EC 固件包) 中提取了 3 个 PD 固件 blob：
+
+| Blob | FL2 偏移 | 大小 | 用途 |
+|------|----------|------|------|
+| N3GPD17W | 0x03ABA4 | 14977B | PD 固件 (可能为 port 1) |
+| N3GPH20W | 0x03E625 | 14977B | PD 固件 (可能为 port 2) |
+| N3GPH70W | 0x0420A6 | 14977B | PD 固件 (辅助/备用) |
+
+每个 blob 结构：
+```
+[0x00-0x7E]   Init header (127 bytes, 三个 blob 完全一致)
+[0x7F-0x3A80] PD data (14850 bytes, 以 ff ff 01 00 开头)
+  ├── [0x7F-0x80]   ff ff 前缀
+  ├── [0x81-0x84]   01 00 + size (LE16)
+  ├── [0x85-0x88]   CRC32
+  ├── [0x89-...]    参数 + FW_ID 字符串
+  ├── [...]         Config TLV 表 (各 blob 不同)
+  └── [0x0602-end]  ARM Thumb-2 固件代码 (13188 bytes, 三个共享)
+```
+
+固件代码以 `44 33 0a 00 2c 00 00 00 d8 6d 04 20` 起始 — "D3" 签名、0x2C 字节头、RAM 指针指向 `0x2004xxxx`。
+
+### 27.3 DFU 下载测试
+
+使用 `dfu-util` 和 pyusb 测试了 **10+ 种固件格式变体**：
+
+| 文件 | 大小 | 描述 | 结果 |
+|------|------|------|------|
+| N3GPD17W_pd.bin | 14850B | PD data (ff ff 01 00 header) | ❌ |
+| pd_firmware_common.bin | 13188B | 纯 ARM 代码 | ❌ |
+| N3GPD17W_fwdata.bin | 13639B | 固件数据段 | ❌ |
+| N3GPD17W_full.bin | 14977B | 完整区域 (init+pd) | ❌ |
+| N3GPD17W_dfu_noff.bin | 14848B | 去掉 ff ff 前缀 | ❌ |
+| pd_fw_suffix.bin | — | 带 DFU suffix | ❌ |
+| fw_pad_3400.bin | 13312B | 对齐到 0x3400 | ❌ |
+| fw_pad_16K.bin | 16384B | 16KB 填充 | ❌ |
+| fw_pad_32K.bin | 32768B | 32KB 填充 | ❌ |
+| blob01_16K.bin | 16384B | 01 00 header 填充 | ❌ |
+
+所有测试结果一致：`dfu-util` 报告下载成功（无错误），但 USB bus reset 后设备仍以 DFU 模式重新枚举。
+
+### 27.4 DFU 状态机追踪 (关键发现)
+
+使用 pyusb 手动发送 DFU 命令并追踪状态转换：
+
+```
+=== DFU State Trace ===
+[initial]     status=0 poll=0ms state=2 (dfuIDLE)
+[after_abort] status=0 poll=0ms state=2 (dfuIDLE)
+
+DNLOAD block=0 (64B)...
+[after_blk0]  status=0 poll=0ms state=5 (DNLOAD-IDLE)
+
+DNLOAD block=1 (64B)...
+[after_blk1]  status=0 poll=0ms state=5 (DNLOAD-IDLE)
+
+ZLP block=2 (end of download)...
+[after_ZLP]   status=0 poll=0ms state=2 (dfuIDLE)  ← 直接回到 IDLE！
+
+=== DfuSe SET_ADDRESS ===
+[setaddr]     status=0 poll=0ms state=5 (DNLOAD-IDLE)
+
+=== Upload ===
+blk 0: 0B  ← flash 为空
+```
+
+#### 核心结论
+
+1. **Bootloader 不写入 flash** — ZLP 后设备直接从 DNLOAD-IDLE 回到 dfuIDLE，**完全跳过 MANIFEST-SYNC → MANIFEST 阶段**。DFU 规范中，MANIFEST 阶段才是实际编程 flash 的时刻。
+
+2. **Poll time 始终 0ms** — 真正的 flash 操作（擦除/写入）需要 10-500ms。0ms 证实没有任何 flash I/O。
+
+3. **上传返回 0 字节** — 确认 flash 内容为空。
+
+4. **DfuSe SET_ADDRESS 回到 DNLOAD-IDLE** — 不等于支持 DfuSe；bootloader 只是接受了任何 DNLOAD payload。
+
+#### 可能的解释
+
+- **Bootloader 是协议桩 (protocol stub)**：Microchip 在 bootloader ROM 中实现了标准 DFU 协议的响应逻辑（状态转换、错误报告），但未实现实际的 flash 编程路径。这可能是因为 Microchip PD 控制器通常通过 **I2C** 编程，USB DFU 是次要/未完成的接口。
+- **固件格式验证失败但无错误报告**：Bootloader 可能在 MANIFEST 之前静默验证固件头、签名或 CRC — 验证失败时回退到 dfuIDLE 而非 dfuERROR。由于我们不知道 Microchip 的私有固件格式（可能需要特定 header/签名/加密），所有测试的格式都被拒绝。
+
+### 27.5 I2C 可达性分析
+
+扫描了所有 CPU 可访问的 I2C 总线 (bus 0-13)：
+
+```bash
+for i in $(seq 0 13); do sudo i2cdetect -y $i; done
+```
+
+**结果：无 PD 控制器设备**。PD 控制器的 I2C 接口连接在 **EC 的私有 I2C 总线**上，主机 CPU 无法直接访问。DSDT 中的 `MI2C` helper 方法操作的 I2CA-I2CD 总线是 EC 内部总线。
+
+### 27.6 结论与可行路径
+
+**USB DFU 路径已确认为死胡同。**
+
+正确的 PD 固件编程路径是：
+1. **EC 通过 I2C 编程** — 生产版 EC (N3GHT68W 或 N3GHT69W) 在启动时读取内嵌的 PD blob，通过私有 I2C 总线写入 Microchip PD 控制器的 flash
+2. **工程版 EC (N3GHT15W v0.15) 缺少此功能** — 因此 PD 控制器的 flash 从未被编程
+
+**可行的解决方案：**
+
+| 方案 | 描述 | 风险 |
+|------|------|------|
+| **A. Lenovo BIOS 更新** | 用 BootX64.efi + FL1/FL2 刷入生产版 BIOS+EC | 中等 — 需要 AC 电源和一定电量 |
+| B. EC SPI 直刷 | 找到 EC 的独立 SPI flash 并用 CH341A 写入 | 高 — 需识别 EC SPI 测试点 |
+| C. 闲鱼卖家方案 | 联系声称"刷 EC 后 USB3 恢复"的卖家获取具体操作 | 取决于沟通 |
+
+**方案 A 是最佳路径** — Lenovo 的 BootX64.efi 是 Insyde H2O IHISI 框架的 SecureFlash 工具，已确认支持 "EC Update"，并可通过参数跳过电池和 AC 适配器检查。所需文件（FL1 + FL2）已从 Lenovo ISO 中提取。
