@@ -3219,3 +3219,25 @@ DSDT 中有 `VVPD` 方法 (line 8287)，通过 SMI → SMM handler → EC → I2
 | — | CSC3551:00 ×2 | Cirrus Logic CS35L41 音频功放 |
 | — | XXXX0000:00 | 未知设备 (工程版占位符?) |
 | EC 私有 | 不可访问 | U5402 VPD EEPROM、PD 控制器 |
+
+### 28.11 NPCX997KA0BX 内部存储架构
+
+Nuvoton NPCX9 系列 EC 芯片型号 NPCX997K**A0BX** — "K" 后缀为无内部 Flash 的变体 (flashless)。
+
+| 存储类型 | 大小 | 可改写 | 说明 |
+|----------|------|--------|------|
+| **Boot ROM** | ~64KB | ❌ (Mask ROM) | 出厂固化的引导加载程序：初始化 SPI 接口、从外部 SPI Flash 加载固件到 SRAM |
+| **SRAM** | ~256-320KB | 易失性 | 运行时代码执行 + 数据存储，掉电丢失 |
+| **OTP** | 少量 (~数百字节) | 一次性 | 安全密钥、芯片配置 fuses，工厂编程 |
+| **内部 Flash** | 无 | — | "K" 变体不含内部 Flash（"F" 变体如 NPCX997F 有 512KB-1MB） |
+
+EC 启动过程：
+```
+1. 上电 → Boot ROM 执行
+2. Boot ROM 初始化 SPI 接口 → 连接 U8505 (W74M25JWZEIQ)
+3. 从 U8505 加载固件镜像到 SRAM
+4. 跳转到 SRAM 中的固件入口点执行
+5. EC 固件初始化 → I2C 总线初始化 → PD 控制器编程 → ACPI EC 接口就绪
+```
+
+**结论**：EC 的所有可修改固件完全存储在 U8505 外部 SPI Flash 中。读/写 U8505 = 完全控制 EC 固件。Boot ROM 不可变，仅提供最底层启动引导。
