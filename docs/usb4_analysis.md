@@ -3178,3 +3178,44 @@ JEC1 为 8-pin 芯片/接口，封装小于 WSON 8mm×6mm，最可能是：
 - **EC UART debug header** — NPCX9 支持 UART console output
 - **SWD debug connector** — 用于 ARM Cortex-M4 调试
 - 以 "J" 前缀命名通常表示 connector/jumper/test point
+
+### 28.9 VPD EEPROM (U5402) 分析
+
+主板正面有一颗 **U5402** — 丝印 `24256E`，即 **256Kbit (32KB) I2C Serial EEPROM**（ON Semi CAT24C256 / Microchip 24LC256 等）。
+
+**用途**：存储 ThinkPad VPD (Vital Product Data)：
+- 序列号、MTM 型号 (21D2CT01WW)、UUID
+- 可能还有 MAC 地址、资产标签、Computrace 状态
+
+**可达性测试**：
+
+```
+Bus 0-2  (Synopsys DW I2C)     : 无 EEPROM
+Bus 3-10 (AMDGPU I2C/AUX)      : 显示相关
+Bus 11   (SMBus PIIX4 port 0)  : 空
+Bus 12   (SMBus PIIX4 port 2)  : 空
+Bus 13   (SMBus PIIX4 port 1)  : DDR5 SPD (spd5118 驱动, 0x50-0x53)
+```
+
+**结论**：U5402 连接在 **EC 的私有 I2C 总线**上，主机 CPU 无法直接访问。
+
+DSDT 中有 `VVPD` 方法 (line 8287)，通过 SMI → SMM handler → EC → I2C → EEPROM 间接读写 VPD。这是 ThinkPad 的标准设计 — VPD 由 BIOS/EC 管理，防止 OS 直接修改序列号等关键数据。
+
+刷 BIOS/EC 不会影响此 EEPROM — 它是独立 I2C 芯片，不在 SPI 总线上。
+
+### 28.10 完整 I2C 总线拓扑
+
+| Bus | 控制器 | 连接设备 |
+|-----|--------|----------|
+| 0 | AMDI0010:00 (DW I2C) | 平台设备 |
+| 1 | AMDI0010:01 (DW I2C) | 平台设备 |
+| 2 | AMDI0010:02 (DW I2C) | 平台设备 |
+| 3-6 | AMDGPU DM I2C | 显示 I2C (DDC) |
+| 7-10 | AMDGPU DM AUX | DisplayPort AUX (eDP, DP-1~3) |
+| 11 | SMBus PIIX4 port 0 @0b00 | 空 |
+| 12 | SMBus PIIX4 port 2 @0b00 | 空 |
+| 13 | SMBus PIIX4 port 1 @0b20 | DDR5 SPD hub (0x50-0x53) |
+| — | ELAN06A0:00 | Elan 触摸板 |
+| — | CSC3551:00 ×2 | Cirrus Logic CS35L41 音频功放 |
+| — | XXXX0000:00 | 未知设备 (工程版占位符?) |
+| EC 私有 | 不可访问 | U5402 VPD EEPROM、PD 控制器 |
