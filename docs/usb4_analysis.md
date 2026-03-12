@@ -2832,12 +2832,123 @@ PSP 锁定 SPI 写保护。需要外接 SPI 编程器恢复。
 - Pre-flash 备份: `build/pre_abl_transplant_dump.bin`
 - ABL 移植（无 APCB）: `build/spi_abl_transplant.bin`
 
-### 25.10 待重启验证
+### 25.10 ~~待重启验证~~ → 结果：变砖
 
-重启后检查项目：
+~~重启后检查项目：~~
 ```bash
 lspci | grep -i 'thunderbolt\|nhi\|usb4'
 lsusb -t
 dmesg | grep -i 'usb4\|thunderbolt\|nhi\|xhci\|billboard'
 ls /sys/bus/thunderbolt/devices/
 ```
+
+**实际结果**: 系统无法启动（变砖），属于 §25.9 中预测的 "不利情况 (~20%)" 或 "极端情况 (<10%)"。
+
+---
+
+## §26 变砖根因分析与 CH341A 恢复
+
+**日期**: 2026-03-12
+
+### 26.1 事件经过
+
+| 时间 | 操作 | 结果 |
+|------|------|------|
+| 2026-03-10 14:47 | Strategy A: 刷入 `spi_usb4_patched` (双 APCB 修改) | 未知（可能变砖后恢复） |
+| 2026-03-10 19:33 | Strategy B: 刷入 `spi_primary_only_patch` (仅 Primary APCB) | 可启动，USB4 无效 |
+| 2026-03-10 ~23:45 | Strategy C (§25): ABL 移植 + APCB 补丁，内部 flashrom 刷入 | **变砖** |
+| 2026-03-12 18:07 | CH341A 外部读取砖后状态 | 读取成功，两次 hash 一致 |
+| 2026-03-12 ~18:15 | CH341A 外部写入原始备份恢复 | **VERIFIED，恢复成功** |
+
+### 26.2 变砖直接原因分析
+
+**导致变砖的刷入内容**：§25 ABL 移植镜像（量产 ABL2 + ABL_POST 注入 + APCB USB4 补丁）
+
+通过 `flashrom -p internal` 在 Linux 下内部刷写。
+
+**为什么 ABL 移植导致变砖？高概率原因：**
+
+#### 假说 A：ABL2 接口不兼容（概率最高 ~50%）
+
+| 组件 | 工程版 | 移植后 |
+|------|--------|--------|
+| ABL2 | 131KB (工程) | **143KB (量产)** |
+| ABL_POST | 缺失 | **393KB (量产)** |
+| AGESA_BL | 131KB (工程) | 131KB (工程，未修改) |
+| DXIO_PHY | 5KB (工程) | 5KB (工程，未修改) |
+
+量产 ABL2 (143KB) 可能调用了工程版 AGESA_BL (131KB) 中不存在的接口/函数，导致 ABL 执行中断。工程版 AGESA_BL 和量产 ABL2 之间存在 12KB 的功能差异。
+
+#### 假说 B：$PL2 目录修改错误（概率 ~25%）
+
+移植操作修改了 $PL2 目录：
+- 修改 ABL2 条目: size 0x020100→0x023100, location→DirRelative+0x22B000
+- 添加 ABL_POST 条目: type=0x5F, size=0x060000, DirRelative+0x24F000
+- entry_count: 43→44
+
+如果 PSP 对 $PL2 目录有额外的完整性检查（如隐藏的目录哈希），修改后的目录会立即失败。
+
+#### 假说 C：ABL_POST 依赖链不完整（概率 ~20%）
+
+ABL_POST (393KB) 可能依赖量产 DXIO_PHY (6KB) 而非工程版 (5KB)。仅移植 ABL2+ABL_POST 而不移植 DXIO_PHY 可能导致运行时崩溃。
+
+#### 假说 D：EC/flashrom 写入干扰（概率 ~5%）
+
+砖后状态 (SHA256: `379d451b...`) 与所有已知镜像都不匹配：
+- ≠ `fresh_backup` (`9bd9bcb1`)
+- ≠ `spi_usb4_patched` (`ef00e791`)
+- ≠ `spi_primary_only_patch` (`576fd1ec`)
+
+这可能意味着：
+1. EC 在内部 flashrom 写入过程中干扰了部分扇区
+2. 系统试图启动失败后 PSP/EC 对 NVRAM 区域做了写入
+3. 时间戳 23:45 的实际刷入文件未保留在 build/ 目录
+
+### 26.3 CH341A 外部恢复操作
+
+**恢复环境**：
+| 项目 | 详情 |
+|------|------|
+| 主机 | macOS (Darwin 24.4.0, x86_64) |
+| 编程器 | CH341A (VID: 0x1a86, PID: 0x5512) |
+| 工具 | flashrom v1.7.0 (brew install) |
+| 连接 | SOIC-8 SOP 测试夹 |
+
+**⚠️ 电压警告**：CH341A 默认 3.3V，但 W25Q256JW 工作电压 1.8V。本次属于过压冒险操作，应使用 1.8V 电平转换器。
+
+**操作步骤**：
+```bash
+# 1. 探测
+sudo flashrom -p ch341a_spi -c W25Q256JW
+# → Found Winbond flash chip "W25Q256JW" (32768 kB, SPI) on ch341a_spi.
+
+# 2. 读取砖后状态（两次，确认一致）
+sudo flashrom -p ch341a_spi -c W25Q256JW -r build/bricked_state_20260312.bin
+# SHA256: 379d451b8ca94af38b3d271b7c39069f1b6ba1e0f1adc1c3e39dbbf2546ae699
+# 第二次读取 hash 完全一致 ✓
+
+# 3. 写入原始备份
+sudo flashrom -p ch341a_spi -c W25Q256JW -w build/fresh_backup_preflash_20260310.bin
+# → Erase/write done from 0 to 1ffffff
+# → Verifying flash... VERIFIED.
+
+# 4. 开机 → 成功进入系统 ✓
+```
+
+### 26.4 固件文件完整清单
+
+| 文件 | SHA256 | 说明 |
+|------|--------|------|
+| `fresh_backup_preflash_20260310.bin` | `9bd9bcb1f8450efd...` | 原始备份 ✓ (恢复用) |
+| `spi_usb4_patched_20260310_144703.bin` | `ef00e791c7fc7b44...` | Strategy A: 双 APCB 补丁 |
+| `spi_primary_only_patch_20260310_193315.bin` | `576fd1ec0e15f094...` | Strategy B: 仅 Primary APCB |
+| `bricked_state_20260312.bin` | `379d451b8ca94af3...` | 砖后 SPI 状态 |
+
+### 26.5 经验总结
+
+1. **永远不要通过内部 flashrom 直接修改笔记本 SPI** — EC 干扰 + 写入风险极高
+2. **ABL 模块移植存在隐性依赖** — 仅移植 ABL2+ABL_POST 不够，AGESA_BL 和 DXIO_PHY 可能也需要更新
+3. **工程版和量产版固件模块之间存在软件接口差异** — Root Key 一致不等于功能兼容
+4. **CH341A 外部编程器是救回变砖机器的最后防线** — 但注意电压匹配 (1.8V vs 3.3V)
+5. **修改 $PL2 目录时要考虑潜在的完整性校验** — PSP 可能对目录有超出 entry_count 的验证
+6. **保留所有中间镜像** — 砖后状态 (`bricked_state`) 对分析写入失败原因至关重要
