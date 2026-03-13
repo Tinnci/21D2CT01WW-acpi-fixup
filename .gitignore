@@ -10,6 +10,14 @@ n3gur27w.iso
 build/*.bin
 spi-tool/target/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+.ruff_cache/
+
 # pixi environments
 .pixi/*
 !.pixi/config.toml

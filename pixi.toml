@@ -17,11 +17,18 @@ platforms = ["osx-64"]
 python = ">=3.12,<4"
 pyusb = "*"
 libusb = "*"
+ruff = "*"
 
 [feature.spi-flash.tasks]
 spi-read = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -r spi_readback.bin", description = "Read SPI flash via CH341A" }
 spi-write-safe = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -w build/fresh_backup_preflash_20260310.bin", description = "Write original backup to SPI flash" }
 spi-verify = { cmd = "flashrom -p ch341a_spi -c W25Q256JW -v build/fresh_backup_preflash_20260310.bin", description = "Verify SPI flash against original backup" }
+spi-check = { cmd = "python -m spiflash check", description = "检查 SPI 操作环境 (CH341A, flashrom, macOS)" }
+spi-probe = { cmd = "python -m spiflash probe", description = "探测 SPI 芯片" }
+spi-analyze = { cmd = "python -m spiflash analyze", description = "分析 SPI dump (需要参数: dump文件路径)" }
+spi-fl2 = { cmd = "python -m spiflash fl2 firmware/ec/N3GHT68W.FL2 firmware/ec/N3GHT69W.FL2", description = "解析并比较 FL2 文件" }
+spi-lint = { cmd = "ruff check spiflash/ scripts/", description = "Lint spiflash 和 scripts" }
+spi-fmt = { cmd = "ruff format spiflash/ scripts/", description = "Format spiflash 和 scripts" }
 
 [environments]
 default = { features = [], solve-group = "default" }
