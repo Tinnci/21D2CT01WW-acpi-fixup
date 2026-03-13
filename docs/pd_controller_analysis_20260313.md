@@ -4,17 +4,17 @@
 > 设备：ThinkPad Z13 Gen 1 21D2CT01WW（工程样机）
 > 输入：`firmware/ec/N3GHT68W.FL2`、`firmware/ec/N3GHT69W.FL2`、`firmware/spi_dump/ec_spi_read_20260313_104036.bin`
 > USB 设备：Microchip `04d8:0039` USB DFU（Bus 001 Device 002）
-> 结论状态：分析完成；DFU 独立更新路径**不推荐**，需进一步研究
+结论状态：分析完成（含 DFU 实时调查）；DFU DNLOAD 路径技术上可行但格式需逆向
 
----
 
 ## 关键结论
 
 1. **工程机的 Microchip PD 控制器永远停留在 ROM DFU bootloader**，从未收到量产 EC 初始化时通过 I2C/SMBus 写入的 PD 固件，这是导致 USB-C 功能完全失效的根本原因。
-2. **FL2 中嵌入 3 个 PD 固件 blob**（N3GPD17W/N3GPH20W/N3GPH70W），每个均约 14–22 KB，使用 Microchip 专有格式（非标准 USB DFU suffix 格式）。
+2. **FL2 中嵌入 3 个 PD 固件 blob**（N3GPD17W/N3GPH20W/N3GPH70W），每个均约 14–22 KB，使用 Microchip 专有 TLV 格式（非标准 USB DFU suffix 格式）。
 3. **工程版 dump 中的 PD 版本**（N3GPD04W/H03W/H53W）与量产 FL2 中的版本（N3GPD17W/H20W/H70W）完全不同，头部结构完全相同，仅哈希/端口配置不同。
 4. **FL2_68 与 FL2_69 的 PD 区域 100% 相同**，PD 固件版本在两次 EC 大版本更新间未变化。
-5. **直接用 `dfu-util` 写入 PD blob 不可行**：格式不兼容，且需要 root 权限（现报 `LIBUSB_ERROR_ACCESS`）。
+5. **DFU_DNLOAD 通道技术上可行**：设备处于 `dfuIDLE`，接受 64 字节块，但 bootloader 会校验固件格式后才进入 manifest 阶段——非法格式被静默丢弃，需要提供正确 binary 格式才能实际写入。
+6. **FL2 中的 PD blob 是 EC 容器格式（TLV 记录）**，不是直接可以发送给 DFU 的 raw binary；DFU 期望的是不含 FL2 包装头的纯 PD firmware binary。
 
 ---
 
@@ -23,19 +23,30 @@
 ### 输入文件
 
 | 文件 | 用途 |
-|---|---|
-| `firmware/ec/N3GHT68W.FL2` | 量产 EC 固件（含 PD blob） |
-| `firmware/ec/N3GHT69W.FL2` | 量产 EC 固件 v2（含 PD blob） |
-| `ec_spi_read_20260313_104036.bin` | 工程版 EC SPI dump（含工程版 PD 区域） |
-
-### 方法
-
-- Python 字节级扫描：版本串定位 + 头部结构逆向
-- `lsusb -v -d 04d8:0039`：USB DFU 描述符读取
-- `dfu-util -l`：DFU 设备枚举（非 root，有权限限制）
-- 版本索引表（`FL2[0x045B27]`）+ 配置表（`FL2[0x045B44]`）关联分析
-
----
+```
+VID:PID         04d8:0039
+制造商          MCHP
+产品名          USB DFU
+序列号          MCHP-DF-005
+String[1]       'MCHP'
+String[2]       'USB DFU'
+String[3]       'MCHP-DF-005'
+String[4]       'Main Configuration'
+String[5]       'Main Interface'
+bcdDevice       0x0820 = 8.32（ROM bootloader 版本，非 8.20）
+DFU 接口        Interface 0, AlternateSetting 0
+bInterfaceClass  0xFE（Application Specific）
+bInterfaceSubClass 0x01（DFU）
+bInterfaceProtocol 0x02（DFU Mode，已处于 DFU 模式，非 runtime）
+DFU 能力        bmAttributes=0x03（bitCanUpload=1, bitCanDnload=1）
+				bitWillDetach=0（需手动 USB reset）
+				bitManifestTolerant=0
+wDetachTimeout  0 ms
+wTransferSize   64 bytes（每次最多传 64B）
+bcdDFUVersion   0x0100（DFU 1.00 规范）
+DFU 状态        dfuIDLE (state=2, status=0, pollTimeout=0ms)
+Upload 结果      DFU_UPLOAD block 0 & 1 = 0 bytes → 固件槽为空（ROM BL 无内置 FW）
+```
 
 ## 结果与证据
 
@@ -114,12 +125,16 @@ Upload 结果     0 bytes → 固件槽为空
 
 | 问题 | 结论 |
 |---|---|
-| 是否需要 root？ | **是**（当前报 `LIBUSB_ERROR_ACCESS`） |
-| FL2 blob 是否为标准 DFU suffix 格式？ | **否**（无 `DFU` 后缀字节，使用 Microchip 专有头部） |
-| 直接 `dfu-util -D blob.bin` 是否可行？ | **不可行**（格式不兼容，可能导致芯片损坏） |
-| 需要什么工具？ | Microchip MPLABConnect / PDFU 写入工具，或需逆向 EC 的 I2C 写入协议 |
-| 三个 blob 哪个对应 `04d8:0039`？ | 未知，推测 N3GPD17W（主端口），但未验证 |
-| 是否存在多个 PD 芯片？ | 可能。三个 blob 各自对应不同端口 / 芯片 |
+| 是否需要 root？ | **已通过指纹认证获取 root**（`sudo dfu-util` 可用） |
+| FL2 blob 是否为标准 DFU suffix 格式？ | **否**（无 `DFU` 后缀字节，使用 Microchip TLV 格式） |
+| 直接 `dfu-util -D pd_blob.bin` 是否可行？ | **不可行**（FL2 blob 含 TLV 包装头，需剥离后才能发送） |
+| DFU_DNLOAD 通道技术上能用吗？ | **能**（接受 64B 块，state→dfuDNLOAD-IDLE）但校验格式 |
+| bootloader 对无效格式块的反应？ | **静默丢弃**（OK 状态，零终止后直接回 dfuIDLE，不进 manifest） |
+| 厂商命令（bmRequestType=0xC0）有用吗？ | **否**（所有请求全部 USBTimeoutError） |
+| 标准 DFU Upload 有数据吗？ | **否**（0 bytes，固件槽完全为空） |
+| 需要什么格式？ | 纯 PD firmware binary（剥除 FL2 TLV 头部），可能还需 DFU suffix |
+| 三个 blob 哪个对应 `04d8:0039`？ | 仍未知，推测 N3GPD17W（USB-C 主端口），需进一步确认 |
+| 是否存在多个 PD 芯片？ | 可能。三个控制块指针各对应一个芯片/端口 |
 
 ---
 
@@ -134,11 +149,42 @@ Upload 结果     0 bytes → 固件槽为空
 
 ## 下一步
 
-- [ ] **获取 root 权限后尝试 DFU 枚举**：`sudo dfu-util -l` 确认 altsetting 数量
-- [ ] **Upload 固件内容**：若其他 DFU 设备有 altsetting 可上传，做版本对比
-- [ ] **研究 Microchip PDFU 格式**：查阅 Microchip AN2242/USB PD bootloader 文档
-- [ ] **等待 EC 更新后重测**：若 EC 0.1.67 更新成功，PD 芯片应由新 EC 初始化，此 DFU 接口可能消失
-- [ ] **从 FL2 提取正确 payload 格式**：通过逆向 EC I2C 写入函数确认 blob 格式是否需要去头
+- [x] **获取 root 权限**：已通过指纹认证，`sudo dfu-util -l` 可用
+- [x] **DFU 协议探测**：完成 GETSTATUS / UPLOAD / 厂商命令 / DNLOAD 探测
+- [x] **设备描述符完整解析**：bcdDevice=8.32，5 个字符串描述符，RAM 地址指针表
+- [ ] **从 FL2 提取纯 PD binary**：剥除 TLV 头部（34字节 header），提取 N3GPD17W 纯 payload
+- [ ] **构造合法 DFU 传输包**：纯 PD binary + DFU suffix（vendor=04d8, product=0039）并测试
+- [ ] **等待 EC 更新后重测（最优先）**：重启 → fwupd 应用 EC 0.1.67 → 检查 `04d8:0039` 是否消失
+- [ ] **研究 Microchip PDFU 格式细节**：查阅 AN2242 文档（需 Microchip 账号登录）
+```bash
+# DFU 实时探测（需 root）
+sudo python3 - << 'PY'
+import usb.core, struct
+dev = usb.core.find(idVendor=0x04d8, idProduct=0x0039)
+try: dev.set_configuration()
+except: pass
+
+# GET_STATUS
+r = dev.ctrl_transfer(0xA1, 3, 0, 0, 6, timeout=2000)
+states = {2:'dfuIDLE',5:'dfuDNLOAD-IDLE',10:'dfuERROR'}
+print(f"state={r[4]}({states.get(r[4],'?')}) status={r[0]}")
+
+# Upload → 预期 0 bytes（固件槽为空）
+up = dev.ctrl_transfer(0xA1, 2, 0, 0, 64, timeout=2000)
+print(f"Upload block 0: {len(up)} bytes")
+PY
+
+# USB 软复位
+sudo python3 -c "
+import usb.core, time
+dev = usb.core.find(idVendor=0x04d8, idProduct=0x0039)
+dev.reset(); time.sleep(1)
+dev2 = usb.core.find(idVendor=0x04d8, idProduct=0x0039)
+r = dev2.ctrl_transfer(0xA1, 3, 0, 0, 6, timeout=2000)
+print(f'复位后 state={r[4]}')
+"
+```
+
 
 ---
 
