@@ -1,0 +1,50 @@
+name: Python Quality
+
+on:
+  push:
+    paths:
+      - "spiflash/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-quality.yml"
+  pull_request:
+    paths:
+      - "spiflash/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-quality.yml"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Ruff lint
+        run: ruff check spiflash/ scripts/
+
+      - name: Ruff format check
+        run: ruff format --check spiflash/ scripts/
+
+      - name: Pytest with coverage
+        run: pytest
+
+      - name: MyPy (spiflash strict)
+        run: mypy
+
+      - name: Bandit (spiflash)
+        run: bandit -q -r spiflash -c pyproject.toml

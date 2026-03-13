@@ -6,9 +6,10 @@ import argparse
 import hashlib
 import sys
 from pathlib import Path
+from typing import Callable
 
 
-def cmd_check(args):
+def cmd_check(args: argparse.Namespace) -> int:
     from .macos import check_prerequisites, find_ch341a, is_macos
     import shutil
 
@@ -36,7 +37,7 @@ def cmd_check(args):
     return 0
 
 
-def cmd_probe(args):
+def cmd_probe(args: argparse.Namespace) -> int:
     from .flashrom import Flashrom
 
     fr = Flashrom(use_sudo=not args.no_sudo)
@@ -61,7 +62,7 @@ def cmd_probe(args):
     return 0
 
 
-def cmd_read(args):
+def cmd_read(args: argparse.Namespace) -> int:
     from .backup import BackupRegistry
     from .flashrom import ChipInfo, Flashrom, FlashromError
 
@@ -103,7 +104,7 @@ def cmd_read(args):
     return 0
 
 
-def cmd_write(args):
+def cmd_write(args: argparse.Namespace) -> int:
     from .backup import BackupRegistry
     from .flashrom import ChipInfo, Flashrom, FlashromError
 
@@ -155,7 +156,7 @@ def cmd_write(args):
     return 0
 
 
-def cmd_analyze(args):
+def cmd_analyze(args: argparse.Namespace) -> int:
     from .spi_map import analyze_spi_dump, format_analysis
 
     dump_path = Path(args.dump)
@@ -164,12 +165,12 @@ def cmd_analyze(args):
         return 1
 
     fl2_dir = Path(args.fl2_dir) if args.fl2_dir else Path("firmware/ec")
-    fl2_files = sorted(fl2_dir.glob("*.FL2")) if fl2_dir.is_dir() else []
+    fl2_files: list[Path | str] = sorted(fl2_dir.glob("*.FL2")) if fl2_dir.is_dir() else []
     print(format_analysis(analyze_spi_dump(dump_path, fl2_files or None)))
     return 0
 
 
-def cmd_fl2(args):
+def cmd_fl2(args: argparse.Namespace) -> int:
     from .fl2 import compare_fl2, parse_fl2
 
     paths = [Path(p) for p in args.files]
@@ -208,7 +209,7 @@ def cmd_fl2(args):
     return 0
 
 
-def cmd_extract(args):
+def cmd_extract(args: argparse.Namespace) -> int:
     from .fl2 import parse_fl2
 
     fl2_path = Path(args.fl2)
@@ -227,7 +228,7 @@ def cmd_extract(args):
     return 0
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="spiflash",
         description="ThinkPad Z13 SPI Flash 管理工具",
@@ -265,7 +266,7 @@ def main(argv=None):
         parser.print_help()
         return 0
 
-    cmds = {
+    cmds: dict[str, Callable[[argparse.Namespace], int]] = {
         "check": cmd_check,
         "probe": cmd_probe,
         "read": cmd_read,

@@ -205,7 +205,7 @@ def parse_fl2(path: Path | str) -> FL2Info:
     )
 
 
-def compare_fl2(a: FL2Info, b: FL2Info) -> dict:
+def compare_fl2(a: FL2Info, b: FL2Info) -> dict[str, object]:
     """比较两个 FL2 文件的差异。"""
     pa = a.extract_payload()
     pb = b.extract_payload()
