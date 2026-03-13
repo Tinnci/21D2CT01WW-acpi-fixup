@@ -12,6 +12,10 @@
 | EC/PD 分析 | 2026-03-12~13 | FL2 逆向、PD blob 提取、DFU 设备发现 |
 | SPI 工具链整合 | 2026-03-13 | 新增 `spiflash` 包、`pixi` SPI 任务、`ruff` 统一 lint/format |
 | EC SPI 实读验证 | 2026-03-13 | 成功读取 `ec_spi_read_20260313_104036.bin`，完成结构与映射分析 |
+| EFI 参数逆向（第2轮） | 2026-03-13 | 定位 `NoDCCheck_BootX64.efi` 字符串表，确认双层参数系统与 dot-token |
+| SPI↔FL2 映射 | 2026-03-13 | 精确建立 SPI dump 与 FL2 偏移映射公式、Boot Config/签名对比 |
+| EFI 工具分析 | 2026-03-13 | SHELLFLASH.EFI/ShellFlash64.efi 逆向, 确认无独立 EC 刷写能力 |
+| NoDCCheck 实测 | 2026-03-13 | EFI Shell 执行失败 — Part Number 检查阻塞, Skip 参数未生效 |
 | DFU/硬件分析 | 2026-03-15 | DFU 状态机追踪 (死胡同)、双 SPI 架构确认、I2C 拓扑 |
 | 文档整合 | 2026-03-15 | ACPI 文档合并、project_inventory 更新 |
 
@@ -41,6 +45,8 @@
 | `dsdt/dsdt_rollback.dsl` | 回滚版本 (原始 DSDT) |
 | `build/dsdt_v3_usb_fix.aml` | 编译产物 (~72KB) |
 | `build/acpi_override` | 引导覆盖 CPIO 包 |
+| `build/ec_update_startup.nsh` | EC-only 更新 EFI Shell 脚本 (v3, 用于更新 USB) |
+| `build/USB_README.txt` | EC 更新 USB 操作说明 |
 
 ### 文档
 
@@ -51,6 +57,9 @@
 | `docs/ec_fl2_analysis.md` | EC FL2 固件逆向分析 |
 | `docs/ec_spi_operation_guide.md` | EC SPI 实操准备清单（U8505） |
 | `docs/ec_spi_read_20260313_analysis.md` | EC SPI 实读样本详细分析（结构、偏移、风险建议） |
+| `docs/efi_nodccheck_reverse_round2.md` | NoDCCheck_BootX64.efi 参数系统逆向（第2轮） |
+| `docs/ec_spi_fl2_mapping.md` | SPI ↔ FL2 精确偏移映射、版本对比、写入策略 |
+| `docs/ec_update_usb_build.md` | EC 更新 USB 构建记录 |
 | `docs/spi_recovery_log.md` | CH341A SPI Flash 恢复日志 |
 | `docs/thinkfan-setup-notes.md` | 风扇控制配置 |
 | `docs/QUICK_REFERENCE.txt` | ACPI 修复速查参考卡 |
@@ -87,6 +96,9 @@
 | `scripts/analyze_ec_spi_dump.py` | EC SPI dump 自动分析 |
 | `scripts/dfu_trace3.py` | Microchip PD DFU 状态机追踪 |
 | `scripts/ec_probe.py` | EC 端口探测 |
+| `scripts/extract_pd_fw.py` | PD 固件 blob 提取 |
+| `scripts/ghidra_ec_analysis.py` | Ghidra 无头 EC 分析脚本 |
+| `scripts/reverse_efi.py` | NoDCCheck_BootX64.efi PE32+ 逆向分析 |
 | `scripts/parse_spi.py` | SPI 镜像解析 |
 | `scripts/spi_dump.sh` | SPI 只读 dump 脚本 |
 
