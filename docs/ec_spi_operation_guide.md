@@ -87,7 +87,17 @@
 
 ## 3. 操作步骤
 
+> 推荐优先使用统一 CLI：`python3 -m spiflash ...`
+> 
+> 裸 `flashrom` 命令仍保留在本节用于调试和底层排障。
+
 ### Phase 1: 探测芯片
+
+```bash
+# 统一工具方式
+python3 -m spiflash check
+python3 -m spiflash probe
+```
 
 ```bash
 # 最小化探测 — 读取 JEDEC ID
@@ -120,6 +130,11 @@ sudo flashrom -p ch341a_spi -V 2>&1 | head -50
 ### Phase 2: 完整备份 (读取两次验证)
 
 ```bash
+# 统一工具方式 (内置双读校验 + 备份登记)
+python3 -m spiflash read ec_spi_backup_YYYYMMDD.bin --chip CHIPNAME --target ec_spi
+```
+
+```bash
 # 替换 CHIPNAME 为 Phase 1 探测到的芯片名
 CHIP="CHIPNAME"
 DATE=$(date +%Y%m%d_%H%M%S)
@@ -148,6 +163,9 @@ cp ec_spi_read1_${DATE}.bin ec_spi_backup_${DATE}.bin
 将 SPI dump 拷贝到工作站后运行:
 
 ```bash
+python3 -m spiflash analyze ec_spi_backup_XXXXXXXX.bin
+
+# 或保留旧脚本方式
 python3 scripts/analyze_ec_spi_dump.py ec_spi_backup_XXXXXXXX.bin
 ```
 
@@ -193,6 +211,9 @@ print(f'Extracted {len(payload)} bytes')
 cp firmware/ec/N3GHT68W.FL2 ec_spi_write_image.bin
 
 # 无论哪种方案，写入命令:
+python3 -m spiflash write ec_spi_write_image.bin --chip CHIPNAME
+
+# 或底层命令
 sudo flashrom -p ch341a_spi -c "$CHIP" -w ec_spi_write_image.bin
 # flashrom 会自动验证: "Verifying flash... VERIFIED."
 ```

@@ -1,6 +1,6 @@
 # 项目文件结构清单
 
-> 最后更新：2026-03-15  
+> 最后更新：2026-03-13  
 > 设备：ThinkPad Z13 Gen 1 (21D2CT01WW)
 
 ## 1. 时间线概览
@@ -10,6 +10,7 @@
 | ACPI 修复 | 2026-01-06 | DSDT 修改、编译、部署（USB3/Lid/DP 命名修复） |
 | 文档整理 | 2026-03-06 | USB4 根因分析、SPI dump 脚本、README |
 | EC/PD 分析 | 2026-03-12~13 | FL2 逆向、PD blob 提取、DFU 设备发现 |
+| SPI 工具链整合 | 2026-03-13 | 新增 `spiflash` 包、`pixi` SPI 任务、`ruff` 统一 lint/format |
 | DFU/硬件分析 | 2026-03-15 | DFU 状态机追踪 (死胡同)、双 SPI 架构确认、I2C 拓扑 |
 | 文档整合 | 2026-03-15 | ACPI 文档合并、project_inventory 更新 |
 
@@ -24,6 +25,7 @@
 | `firmware/ec/` | EC FL2 固件 (Lenovo ISO 提取) |
 | `firmware/spi_dump/` | SPI dump 输出 (不纳入版本控制) |
 | `scripts/` | 分析/调试脚本 |
+| `spiflash/` | 统一 SPI 刷写/分析工具包 (Python) |
 | `spi-tool/` | Rust SPI 镜像分析工具 |
 | `archive/` | 归档：旧文档、会话记录、旧产物 |
 | `thinkpadOEM/` | Lenovo OEM 工具 (U 盘备份) |
@@ -46,6 +48,7 @@
 | `docs/acpi_fixes_complete.md` | ACPI 修复完整文档 (分析+代码+验证) |
 | `docs/usb4_analysis.md` | USB4/EC/SPI/PD 终极诊断报告 (§1-§28, ~140KB) |
 | `docs/ec_fl2_analysis.md` | EC FL2 固件逆向分析 |
+| `docs/ec_spi_operation_guide.md` | EC SPI 实操准备清单（U8505） |
 | `docs/spi_recovery_log.md` | CH341A SPI Flash 恢复日志 |
 | `docs/thinkfan-setup-notes.md` | 风扇控制配置 |
 | `docs/QUICK_REFERENCE.txt` | ACPI 修复速查参考卡 |
@@ -58,12 +61,28 @@
 | `firmware/ec/N3GHT68W.FL2` | EC 固件 (配套 BIOS N3GET74W) |
 | `firmware/ec/N3GHT69W.FL2` | EC 固件 (配套 BIOS N3GET76W) |
 
+### SPI 工具链与配置
+
+| 文件 | 说明 |
+|------|------|
+| `spiflash/cli.py` | CLI 主入口（`check/probe/read/write/analyze/fl2/extract`） |
+| `spiflash/flashrom.py` | flashrom 子进程封装与读写验证 |
+| `spiflash/macos.py` | macOS CH341A 检测、驱动冲突提示、权限检查 |
+| `spiflash/fl2.py` | FL2 解析、payload 提取、版本比较 |
+| `spiflash/spi_map.py` | SPI dump 特征识别与 FL2 映射 |
+| `spiflash/backup.py` | 备份索引/哈希登记 |
+| `pyproject.toml` | 打包入口 + Ruff 规则配置 |
+| `pixi.toml` | `spi-check/spi-probe/spi-fl2/spi-lint/spi-fmt` 等任务 |
+
 ### 脚本
 
 | 文件 | 说明 |
 |------|------|
 | `scripts/analyze_ec_fl2.py` | EC FL2 固件包解析 |
 | `scripts/analyze_spi_usb4.py` | SPI flash USB4 模块分析 |
+| `scripts/analyze_fl2_spi_mapping.py` | FL2 header/payload 与 SPI 映射分析 |
+| `scripts/analyze_boot_config.py` | FL2 Boot Config 块对比分析 |
+| `scripts/analyze_ec_spi_dump.py` | EC SPI dump 自动分析 |
 | `scripts/dfu_trace3.py` | Microchip PD DFU 状态机追踪 |
 | `scripts/ec_probe.py` | EC 端口探测 |
 | `scripts/parse_spi.py` | SPI 镜像解析 |

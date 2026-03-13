@@ -27,6 +27,8 @@
 > 详细分析见 [docs/usb4_analysis.md](docs/usb4_analysis.md)（含第 13 节：生产 BIOS 对比）
 >
 > 文件时间线与结构清单见 [docs/project_inventory.md](docs/project_inventory.md)
+>
+> EC SPI 实操前请先阅读 [docs/ec_spi_operation_guide.md](docs/ec_spi_operation_guide.md)
 
 ---
 
@@ -35,6 +37,8 @@
 ```
 acpi-fixup/
 ├── README.md                 ← 本文件
+├── pyproject.toml            ← Python 打包与 Ruff 配置
+├── pixi.toml                 ← pixi 环境与任务定义
 ├── docs/                     ← 文档
 │   ├── acpi_analysis_complete.md   合并后的完整分析文档
 │   ├── ACPI_FIXES_APPLIED.md       修复报告（部署记录）
@@ -64,6 +68,14 @@ acpi-fixup/
 │   ├── spi_dump.sh                SPI 只读 dump 脚本
 │   ├── parse_spi.py               AMD PSP 目录解析
 │   └── analyze_spi_usb4.py        USB4/UCSI SPI 深度分析
+├── spiflash/                 ← 统一 SPI 工具包 (Python)
+│   ├── __main__.py                `python -m spiflash` 入口
+│   ├── cli.py                     CLI 子命令 (check/probe/read/write/...)
+│   ├── flashrom.py                flashrom 封装
+│   ├── macos.py                   macOS 权限与 CH341A 检查
+│   ├── fl2.py                     FL2 解析/比较
+│   ├── spi_map.py                 SPI dump 布局分析
+│   └── backup.py                  备份注册与 SHA256 记录
 └── archive/                  ← 归档（可安全删除）
     ├── copilot-session-*.md        Copilot 调试对话记录
     ├── Fixing ACPI Lid and USB.md  聊天对话导出
@@ -90,6 +102,34 @@ dsdt_safe_audio_base.dsl (v0xF3) ─── 基准
 ---
 
 ## 快速操作
+
+### SPI 工具链（新增）
+```bash
+# 查看所有子命令
+python3 -m spiflash --help
+
+# 环境检查（macOS/CH341A/flashrom）
+python3 -m spiflash check
+
+# 探测芯片
+python3 -m spiflash probe
+
+# 对比 FL2
+python3 -m spiflash fl2 firmware/ec/N3GHT68W.FL2 firmware/ec/N3GHT69W.FL2
+
+# 分析 dump
+python3 -m spiflash analyze /path/to/ec_spi_dump.bin
+```
+
+### pixi 任务（spi-flash feature）
+```bash
+# 进入 spi-flash 环境执行任务
+pixi run -e spi-flash spi-check
+pixi run -e spi-flash spi-probe
+pixi run -e spi-flash spi-fl2
+pixi run -e spi-flash spi-lint
+pixi run -e spi-flash spi-fmt
+```
 
 ### 验证当前状态
 ```bash
