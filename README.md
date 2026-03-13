@@ -40,11 +40,12 @@ acpi-fixup/
 ├── pyproject.toml            ← Python 打包与 Ruff 配置
 ├── pixi.toml                 ← pixi 环境与任务定义
 ├── docs/                     ← 文档
-│   ├── acpi_analysis_complete.md   合并后的完整分析文档
-│   ├── ACPI_FIXES_APPLIED.md       修复报告（部署记录）
+│   ├── acpi_fixes_complete.md      修复报告（整合版）
+│   ├── file_date_audit_20260313.md 文件日期审计与结构整理
 │   ├── project_inventory.md        文件时间线与结构清单
 │   ├── usb4_analysis.md            USB4/USB-C 降级根因分析
 │   ├── QUICK_REFERENCE.txt         快速参考卡（验证命令）
+│   ├── ec_spi_operation_guide.md   EC/SPI 操作指南
 │   └── thinkfan-setup-notes.md     ThinkFan 风扇配置
 ├── dsdt/                     ← DSDT 源码（按版本演进）
 │   ├── dsdt_safe_audio_base.dsl    v0xF3 — 基准版本
@@ -59,6 +60,7 @@ acpi-fixup/
 ├── firmware/                 ← 固件相关
 │   ├── acpi/
 │   │   └── dsdt.aml                中间构建产物
+│   ├── packages/                   原始固件包（ISO/CAB）
 │   ├── spi_dump/                   SPI 只读 dump 输出目录（已忽略）
 │   └── bios_update/                生产 BIOS 提取
 │       └── extracted/Flash/N3GET74W/
