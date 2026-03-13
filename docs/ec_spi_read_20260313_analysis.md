@@ -98,7 +98,36 @@
 4. 电压安全
    - 继续坚持 1.8V 适配板，避免 3.3V 长时间读写
 
-## 7. 可复现命令
+## 7. 新增基线对比（2026-03-13 会话补充）
+
+新增对比对象:
+
+- `firmware/spi_dump/bios_dump_20260306_104957.bin`
+- `firmware/spi_dump/ec_spi_read_20260313_104036.bin`
+
+对比结果:
+
+- 两者均为 `32MB`，但 SHA256 完全不同
+- 字节差异约 `29,644,510` bytes（`88.35%`）
+- 差异段数量约 `304,350` 段（高度碎片化）
+
+结论:
+
+- `ec_spi_read_20260313_104036.bin` 不是“主 BIOS dump 的轻微改动版”，而是不同映射/内容布局样本。
+- 结合 `_EC2`、Boot Config、向量表与版本串证据，可继续将其视为 EC 相关镜像样本。
+
+## 8. 风险与后续任务
+
+1. 目前已通过 fwupd 本地重定向 CAB 进入待重启队列：
+   - System Firmware `0.1.76`
+   - Embedded Controller `0.1.67`
+2. 在重启并完成固件阶段应用前，避免再做新的写入动作，以免交叉影响验证结果。
+3. 重启后建议立即采集：
+   - `fwupdmgr get-history`
+   - `fwupdmgr get-devices`
+   - 必要时再次读取 SPI/EC dump，做“升级前后”二次差异分析。
+
+## 9. 可复现命令
 
 ```bash
 # 主分析
@@ -109,4 +138,16 @@ python3 scripts/analyze_ec_spi_dump.py firmware/spi_dump/ec_spi_read_20260313_10
 
 # FL2 对比基线
 python3 -m spiflash fl2 firmware/ec/N3GHT68W.FL2 firmware/ec/N3GHT69W.FL2
+
+# 新增：与 3/6 样本做整体差异统计
+python3 - << 'PY'
+from pathlib import Path
+import hashlib
+
+a = Path('firmware/spi_dump/bios_dump_20260306_104957.bin').read_bytes()
+b = Path('firmware/spi_dump/ec_spi_read_20260313_104036.bin').read_bytes()
+print('sha256 A=', hashlib.sha256(a).hexdigest())
+print('sha256 B=', hashlib.sha256(b).hexdigest())
+print('changed=', sum(x != y for x, y in zip(a, b)))
+PY
 ```
