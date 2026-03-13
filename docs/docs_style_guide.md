@@ -51,16 +51,35 @@
 - “结论”与“推断”显式区分，避免混写
 - 所有关键结论尽量附至少一条可复现证据（偏移/哈希/命令输出）
 
-## 5. docs 文件命名迁移建议
+## 5. docs 文件命名迁移状态
 
-建议重命名（仅建议，暂未执行）：
+> 最后更新：2026-03-13
 
-- `QUICK_REFERENCE.txt` → `quick_reference.txt`
-- `thinkfan-setup-notes.md` → `thinkfan_setup_notes.md`
-- `file_date_audit_20260313.md` → `project_file_date_audit_20260313.md`
-- `project_inventory.md`（保持）
-- `fwupd_matching_analysis_20260313.md` → `fwupd_matching_analysis_20260313.md`（保持）
-- `fwupd_cab_guid_retarget_experiment_20260313.md`（保持）
+已完成重命名（`git mv` + commit）：
+
+| 原文件名 | 新文件名 | 状态 |
+|---|---|---|
+| `QUICK_REFERENCE.txt` | `quick_reference.txt` | ✅ 已完成 |
+| `thinkfan-setup-notes.md` | `thinkfan_setup_notes.md` | ✅ 已完成 |
+| `file_date_audit_20260313.md` | `project_file_date_audit_20260313.md` | ✅ 已完成 |
+
+保持不变（已符合规范）：
+
+| 文件名 | 原因 |
+|---|---|
+| `project_inventory.md` | 已符合 `snake_case` 规范 |
+| `fwupd_matching_analysis_20260313.md` | 已符合规范 |
+| `fwupd_cab_guid_retarget_experiment_20260313.md` | 已符合规范 |
+| `ec_spi_read_20260313_analysis.md` | 已符合规范 |
+| `acpi_fixes_complete.md` | 已符合规范 |
+| `ec_fl2_analysis.md` | 已符合规范 |
+| `ec_spi_fl2_mapping.md` | 已符合规范 |
+| `ec_spi_operation_guide.md` | 已符合规范 |
+| `ec_update_usb_build.md` | 已符合规范 |
+| `efi_nodccheck_reverse_round2.md` | 已符合规范 |
+| `spi_recovery_log.md` | 已符合规范 |
+| `usb4_analysis.md` | 已符合规范 |
+| `docs_style_guide.md` | 已符合规范 |
 
 ## 6. 落地顺序建议
 
