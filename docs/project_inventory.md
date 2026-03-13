@@ -11,6 +11,7 @@
 | 文档整理 | 2026-03-06 | USB4 根因分析、SPI dump 脚本、README |
 | EC/PD 分析 | 2026-03-12~13 | FL2 逆向、PD blob 提取、DFU 设备发现 |
 | SPI 工具链整合 | 2026-03-13 | 新增 `spiflash` 包、`pixi` SPI 任务、`ruff` 统一 lint/format |
+| EC SPI 实读验证 | 2026-03-13 | 成功读取 `ec_spi_read_20260313_104036.bin`，完成结构与映射分析 |
 | DFU/硬件分析 | 2026-03-15 | DFU 状态机追踪 (死胡同)、双 SPI 架构确认、I2C 拓扑 |
 | 文档整合 | 2026-03-15 | ACPI 文档合并、project_inventory 更新 |
 
@@ -49,6 +50,7 @@
 | `docs/usb4_analysis.md` | USB4/EC/SPI/PD 终极诊断报告 (§1-§28, ~140KB) |
 | `docs/ec_fl2_analysis.md` | EC FL2 固件逆向分析 |
 | `docs/ec_spi_operation_guide.md` | EC SPI 实操准备清单（U8505） |
+| `docs/ec_spi_read_20260313_analysis.md` | EC SPI 实读样本详细分析（结构、偏移、风险建议） |
 | `docs/spi_recovery_log.md` | CH341A SPI Flash 恢复日志 |
 | `docs/thinkfan-setup-notes.md` | 风扇控制配置 |
 | `docs/QUICK_REFERENCE.txt` | ACPI 修复速查参考卡 |

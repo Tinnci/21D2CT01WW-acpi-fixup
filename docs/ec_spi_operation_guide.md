@@ -430,6 +430,7 @@ if __name__ == '__main__':
 
 | 文件 | 说明 |
 |------|------|
+| [docs/ec_spi_read_20260313_analysis.md](docs/ec_spi_read_20260313_analysis.md) | 2026-03-13 EC SPI 实读与映射分析报告 |
 | [docs/spi_recovery_log.md](docs/spi_recovery_log.md) | 主 SPI 恢复记录 (上次 CH341A 操作经验) |
 | [docs/ec_fl2_analysis.md](docs/ec_fl2_analysis.md) | FL2 逆向工程分析 |
 | [docs/usb4_analysis.md](docs/usb4_analysis.md) | 完整硬件分析报告 (§28 = EC SPI 架构) |
