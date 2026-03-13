@@ -70,3 +70,37 @@
    1. System Firmware `0.1.76`
    2. Embedded Controller `0.1.67`
 - 下一步必须重启，验证固件阶段实际刷写是否成功及版本是否生效。
+
+## 可复现流程（命令级）
+
+### A. BIOS CAB 重定向
+1. 读取原包 `N3GET76W.cab`
+2. 替换 `firmware.metainfo.xml`：
+   - `ce5cfa7d-0ce2-4974-b866-a367f9e85481`
+   - → `66d47c53-a746-4495-a444-e6b26a04906d`
+3. 保持 `firmware.bin`/`firmware.jcat` 不变，重新保存 CAB：
+   - `build/N3GET76W_guid_retarget_test.cab`
+4. 验证与安装：
+   - `fwupdmgr get-details build/N3GET76W_guid_retarget_test.cab`
+   - `fwupdmgr local-install build/N3GET76W_guid_retarget_test.cab --force --allow-reinstall --allow-older -y`
+
+### B. EC CAB 重定向
+1. 读取 EC 原包（1.67）
+2. 将原目标 GUID `b7787ed5-7008-4da9-8475-b8779d835882` 分别替换为以下候选：
+   - `f766f6e6-b43d-4acd-a4bd-80ff2f0af5cc`
+   - `f5536e63-e4c0-4e0d-84d4-e8e152b1ba65`
+   - `88440680-8493-43d8-b1cb-51992223a226`
+   - `4bea12df-56e3-4cdb-97dd-f133768c9051`
+3. 分别用 `fwupdmgr get-details` 检查匹配，最终选择 `4bea12df` 进行安装：
+   - `fwupdmgr local-install build/EC167_guid_retarget_4bea12df-56e3-4cdb-97dd-f133768c9051.cab --force --allow-older --allow-reinstall -y`
+
+### C. 状态确认
+- `fwupdmgr get-history`
+- `fwupdmgr get-devices`
+
+## 产物清单（已生成）
+- `build/N3GET76W_guid_retarget_test.cab`
+- `build/EC167_guid_retarget_f766f6e6-b43d-4acd-a4bd-80ff2f0af5cc.cab`
+- `build/EC167_guid_retarget_f5536e63-e4c0-4e0d-84d4-e8e152b1ba65.cab`
+- `build/EC167_guid_retarget_88440680-8493-43d8-b1cb-51992223a226.cab`
+- `build/EC167_guid_retarget_4bea12df-56e3-4cdb-97dd-f133768c9051.cab`
