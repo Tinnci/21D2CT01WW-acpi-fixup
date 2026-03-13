@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
 """Deep APCB + PHCM + USB4 analysis of SPI dump."""
-import struct, sys
+
+import struct
 
 DUMP = "firmware/spi_dump/bios_dump_20260306_104957.bin"
 with open(DUMP, "rb") as f:
     data = f.read()
 
+
 def u32(off):
     return struct.unpack_from("<I", data, off)[0]
+
 
 # ── 1. PHCM PD Controller firmware ──────────────────
 print("=== PHCM (PD Controller / Type-C Manager) ===")
 phcm_off = 0x081000
-sig = data[phcm_off:phcm_off+4]
-major = data[phcm_off+4] | (data[phcm_off+5] << 8)
-minor = data[phcm_off+6] | (data[phcm_off+7] << 8)
+sig = data[phcm_off : phcm_off + 4]
+major = data[phcm_off + 4] | (data[phcm_off + 5] << 8)
+minor = data[phcm_off + 6] | (data[phcm_off + 7] << 8)
 print(f"  Signature: {sig}")
 print(f"  Version: {major}.{minor}")
 # Size estimate: find next 0xFF region
 i = phcm_off
 while i < min(phcm_off + 0x20000, len(data)):
-    if data[i:i+16] == b'\xff' * 16:
+    if data[i : i + 16] == b"\xff" * 16:
         break
     i += 16
 phcm_size = i - phcm_off
-print(f"  Size: ~0x{phcm_size:X} ({phcm_size//1024}KB)")
+print(f"  Size: ~0x{phcm_size:X} ({phcm_size // 1024}KB)")
 # Show version string area
 print(f"  Platform: {data[0x91080:0x910E0].split(b'\\x00')[0].decode(errors='replace')}")
 
@@ -33,27 +36,43 @@ print("\n=== APCB Instances ===")
 apcb_locs = []
 pos = 0
 while True:
-    idx = data.find(b'APCB', pos)
+    idx = data.find(b"APCB", pos)
     if idx < 0 or idx >= len(data) - 32:
         break
     # Verify it's a real APCB header
-    ver = struct.unpack_from('<H', data, idx+4)[0]
-    hdr_sz = struct.unpack_from('<H', data, idx+6)[0]
-    data_sz = u32(idx+8)
+    ver = struct.unpack_from("<H", data, idx + 4)[0]
+    hdr_sz = struct.unpack_from("<H", data, idx + 6)[0]
+    data_sz = u32(idx + 8)
     if 0x20 <= hdr_sz <= 0x100 and 0 < data_sz < 0x200000:
-        uniq = u32(idx+12)
-        board = struct.unpack_from('<H', data, idx+16)[0]
-        print(f"  APCB @0x{idx:06X}: ver=0x{ver:04X} hdr=0x{hdr_sz:X} data=0x{data_sz:X} uid=0x{uniq:08X} board=0x{board:X}")
+        uniq = u32(idx + 12)
+        board = struct.unpack_from("<H", data, idx + 16)[0]
+        print(
+            f"  APCB @0x{idx:06X}: ver=0x{ver:04X} hdr=0x{hdr_sz:X} data=0x{data_sz:X} uid=0x{uniq:08X} board=0x{board:X}"
+        )
         apcb_locs.append((idx, data_sz))
     pos = idx + 4
 
 # ── 3. Search for USB4 tokens in ALL APCB regions ───
 print("\n=== USB4/UCSI Token 全搜 (所有 APCB 区域) ===")
-keywords = [b'USB4', b'Usb4', b'usb4', b'UCSI', b'ucsi', b'NHI',
-            b'nhi', b'TypeC', b'typec', b'PcieTunnel', b'DpTunnel',
-            b'UsbTunnel', b'Usb4En', b'USB4_EN', b'NhiEn']
+keywords = [
+    b"USB4",
+    b"Usb4",
+    b"usb4",
+    b"UCSI",
+    b"ucsi",
+    b"NHI",
+    b"nhi",
+    b"TypeC",
+    b"typec",
+    b"PcieTunnel",
+    b"DpTunnel",
+    b"UsbTunnel",
+    b"Usb4En",
+    b"USB4_EN",
+    b"NhiEn",
+]
 for apcb_off, apcb_sz in apcb_locs:
-    region = data[apcb_off:apcb_off + apcb_sz + 0x30]
+    region = data[apcb_off : apcb_off + apcb_sz + 0x30]
     for kw in keywords:
         idx = 0
         while True:
@@ -61,7 +80,7 @@ for apcb_off, apcb_sz in apcb_locs:
             if found < 0:
                 break
             abs_off = apcb_off + found
-            ctx = region[max(0, found-8):found+len(kw)+24]
+            ctx = region[max(0, found - 8) : found + len(kw) + 24]
             print(f"  [{kw.decode(errors='replace')}] @0x{abs_off:06X} ctx={ctx.hex()}")
             idx = found + len(kw)
 
@@ -76,7 +95,7 @@ for label, region_start, region_end in [
     i = region_start
     while i < region_end:
         # Extract printable strings
-        s = b''
+        s = b""
         while i < region_end and 0x20 <= data[i] < 0x7F:
             s += bytes([data[i]])
             i += 1
@@ -114,11 +133,11 @@ for label, fw_off, fw_sz in [
     ("SMN_FW2 sub=0", 0x08E800, 0x019E60),
     ("SMN_FW2 sub=1", 0x0A8700, 0x01D8D0),
     ("DXIO_PHY_SRAM", 0x191100, 0x048480),
-    ("ABL SPL",       0x0D4A00, 0x0191F0),
+    ("ABL SPL", 0x0D4A00, 0x0191F0),
 ]:
-    region = data[fw_off:fw_off+fw_sz]
+    region = data[fw_off : fw_off + fw_sz]
     hits = []
-    for kw in [b'usb4', b'USB4', b'nhi', b'NHI', b'ucsi', b'UCSI']:
+    for kw in [b"usb4", b"USB4", b"nhi", b"NHI", b"ucsi", b"UCSI"]:
         idx = region.find(kw)
         if idx >= 0:
             hits.append(f"{kw.decode()}@+0x{idx:X}")
@@ -129,9 +148,21 @@ for label, fw_off, fw_sz in [
 
 # ── 7. AGESA PEI analysis ───────────────────────────
 print("\n=== AGESA PEI (0x111600, 436KB) - USB4 引用 ===")
-agesa_pei = data[0x111600:0x111600+0x06A940]
-for kw in [b'USB4', b'usb4', b'Usb4', b'UCSI', b'NHI', b'nhi', b'XHCI',
-           b'xhci', b'TypeC', b'Mux', b'PD ', b'PdController']:
+agesa_pei = data[0x111600 : 0x111600 + 0x06A940]
+for kw in [
+    b"USB4",
+    b"usb4",
+    b"Usb4",
+    b"UCSI",
+    b"NHI",
+    b"nhi",
+    b"XHCI",
+    b"xhci",
+    b"TypeC",
+    b"Mux",
+    b"PD ",
+    b"PdController",
+]:
     hits = []
     idx = 0
     while len(hits) < 5:
@@ -141,8 +172,8 @@ for kw in [b'USB4', b'usb4', b'Usb4', b'UCSI', b'NHI', b'nhi', b'XHCI',
         hits.append(found)
         idx = found + len(kw)
     if hits:
-        locs = [f"0x{0x111600+h:06X}" for h in hits[:3]]
-        more = f" (+{len(hits)-3} more)" if len(hits) > 3 else ""
+        locs = [f"0x{0x111600 + h:06X}" for h in hits[:3]]
+        more = f" (+{len(hits) - 3} more)" if len(hits) > 3 else ""
         print(f"  {kw.decode(errors='replace'):16s} → {', '.join(locs)}{more}")
 
 # ── 8. NHI data structure analysis ──────────────────
@@ -153,12 +184,12 @@ print("\n=== NHI 结构分析 ===")
 for label, fw_off, fw_sz in [
     ("SMN_FW2 sub=0", 0x08E800, 0x019E60),
     ("SMN_FW2 sub=1", 0x0A8700, 0x01D8D0),
-    ("AGESA_PEI",     0x111600, 0x06A940),
-    ("Type 0x73",     0x002600, 0x013740),
+    ("AGESA_PEI", 0x111600, 0x06A940),
+    ("Type 0x73", 0x002600, 0x013740),
     ("Type 0x71 sub=0", 0x1DA200, 0x018C90),
     ("Type 0x71 sub=1", 0x1F2F00, 0x026110),
-    ("Type 0x86",     0x8B9000, 0x234000),
-    ("Type 0x88",     0xAED000, 0x1B4000),
+    ("Type 0x86", 0x8B9000, 0x234000),
+    ("Type 0x88", 0xAED000, 0x1B4000),
 ]:
     if fw_off <= 0x2415D8 < fw_off + fw_sz:
         inner = 0x2415D8 - fw_off

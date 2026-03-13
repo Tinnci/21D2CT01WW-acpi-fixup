@@ -87,7 +87,7 @@ def write_flash(image: str | None = None):
         print(f"错误: 固件大小 {size} bytes 不等于预期 {EXPECTED_SIZE} bytes!")
         sys.exit(1)
 
-    print(f"=== 即将写入 SPI 闪存 ===")
+    print("=== 即将写入 SPI 闪存 ===")
     print(f"  固件文件: {img.name}")
     print(f"  大小: {size // 1024 // 1024} MB")
     print(f"  SHA256: {sha256(img)}")
