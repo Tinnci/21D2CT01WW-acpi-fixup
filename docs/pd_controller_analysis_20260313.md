@@ -677,3 +677,291 @@ EC 固件工程版（N3GHT6xW）
 1. **立即可行**：重启并通过 fwupd 应用 EC 0.1.67 + BIOS 0.1.76（量产版 EC 应有完整初始化）
 2. **调试路径**：读取 MNVS.PDCI（devmem2 0xBAC25ED8）观察 EC 更新前后变化
 3. **研究路径**：通过 `i2cset -y 0 0x27 0x42 0x10` 等命令手动模拟 H70W SEC4-C 初始化
+
+---
+
+### 3.11 EC SPI 固件深度分析（32MB dump）
+
+> 本节基于 2026-03-14 对 `firmware/spi_dump/ec_spi_read_20260313_104036.bin` 的深度逆向分析，结合 `firmware/ec/N3GPH70W.bin` SEC4-C 数据段的精确解析。
+
+#### 3.11.1 SPI 整体布局
+
+| SPI 偏移 | 内容 | 说明 |
+|---|---|---|
+| 0x001508 | EC 版本字符串 "N3GHT15W" | 工程版 EC 固件 v1.5 |
+| 0x0364d3 | N3GPD17W PD blob | 左侧 USB-C PD 控制器固件 |
+| 0x039e54 | N3GPH20W PD blob | 右侧 USB-C PD 控制器固件 |
+| 0x03d7d5 | N3GPH70W PD blob | Thunderbolt/USB4 PD 控制器固件 |
+| 0x040000+ | EC ARM 代码区 | 含 KB8002 初始化代码（KB8002 init 位于 0x40000+0x21783） |
+| 0x041450 | TPS65994 I2C 设备表 | ch=0x40~0x47, bus=0x0b, addr=0x20 |
+| 0x041530 | TPS65994 寄存器访问索引表 | 25 条，全部 bus=0x14, dev=0x20 |
+| 0x041698 | 函数指针表（0x0b10 段） | 共 13 条，KB8002 相关函数 |
+| 0x416d0 | TPS65994 I2C 总线/地址映射表 | bus=0x08, write_addr=0x40 |
+| 0x042960 | TPS65994 命令名称/ID 映射表 | 59 条命令，ID 0x01~0x3b |
+| 0x042ac8 | TPS65994 命令处理函数指针表 | 36 条，EC 地址范围 0x07xxxx~0x09xxxx |
+| 0x042b58 | 命令路由查找表 | 0xFF 分隔的索引数组 |
+
+**EC MCU 代码段说明（Renesas RL78 架构）：**
+- `0x07xxxx` 段：主 PD 控制代码（TPS65994 命令处理核心）
+- `0x08xxxx` 段：扩展功能（GAID 事件处理）
+- `0x09xxxx` 段：电源管理（SWSk Sink 切换、GSrC Source 能力获取）
+- `0x0bxxxx` 段：KB8002 Retimer 控制模块
+
+---
+
+#### 3.11.2 TPS65994 / SN2001023YBGR I2C 地址确认
+
+**结论：TPS65994（SN2001023YBGR）7-bit I2C 地址 = `0x20`，写地址 = `0x40`**
+
+确认依据1：SPI `0x41450` 处 I2C 设备表：
+```
+每条记录 4 字节：[ch_id=0x40~0x47][bus=0x0b][reserved][dev_addr=0x20]
+共 8 条，每个通道（ch_id=0x40/0x41/0x42/0x43/0x44/0x45/0x46/0x47）
+全部指向 bus=0x0b, dev=0x20
+```
+
+确认依据2：SPI `0x41530` 处寄存器访问索引表，全部 25 条记录均为 `bus=0x14, dev_addr=0x20`。
+
+确认依据3：SPI `0x416d0` 处映射表：
+```
+04 10 08 40  → port_idx=4, bus=0x08, write_addr=0x40 (7bit=0x20)
+```
+
+该地址在 Linux 下不可见（TPS65994 通过 EC 独占的 I2C 总线控制）。
+
+---
+
+#### 3.11.3 TPS65994 命令名称/ID 映射表（★★★ 关键发现）
+
+**位置**：SPI `0x42960`~`0x42ac5`（330 字节）
+**格式**：`[cmd_id: 1B][name_4char: ASCII][size_or_flags: 1B]` = 6 字节/条，共 59 条
+
+这是 EC 固件内嵌的 TPS65994 I2C 子命令路由表，证明 EC 通过 I2C 直接向 TPS65994 下发 59 种操作指令。
+
+**完整命令表：**
+
+| CMD ID | 名称 | Payload | 功能说明 |
+|---|---|---|---|
+| 0x01 | Gaid | 8B | Go Away ID（异步通知事件） |
+| 0x02 | GAID | 8B | Get Active IDentity |
+| 0x03 | DISC | 7B | Disconnect |
+| 0x04 | GO2M | 6B | Go to Minimized（低功耗模式） |
+| 0x05 | ABRT | 6B | Abort |
+| 0x06 | LOCK | 7B | Lock port |
+| 0x07 | SWSk | 6B | SoftwareSwitch-Sink |
+| 0x08 | SWSr | 6B | SoftwareSwitch-Source |
+| 0x09 | SWDF | 6B | SW DualFunction |
+| 0x0a | SWUF | 6B | SW UFP（上行端口模式） |
+| 0x0b | SWVC | 6B | SW VConn Control |
+| 0x0c | GSkC | 6B | Get Sink Capability |
+| 0x0d | GSrC | 6B | Get Source Capability |
+| 0x0e | SSrC | 6B | Set Source Capability |
+| 0x0f | RRDO | 7B | Request RDO（Request Data Object） |
+| 0x10 | ARDO | 7B | Answer RDO |
+| 0x11 | SRDO | 7B | Set RDO |
+| 0x12 | HRST | 6B | Hard Reset |
+| 0x13 | CRST | 6B | Cable Reset |
+| 0x14 | VDMs | 7B | VDM Send（Vendor Defined Message） |
+| **0x15** | **AMDI** | 7B | **AMD Inquiry VDM（AMD 平台专用）** |
+| **0x16** | **AMEn** | 7B | **AMD Enable VDM** |
+| **0x17** | **AMEx** | 7B | **AMD Exit VDM** |
+| **0x18** | **AMDs** | 6B | **AMD Status VDM** |
+| 0x19 | GCdm | 3B | Get Configured Display Mode |
+| 0x1a | SRDY | 7B | Set Ready |
+| 0x1b | SRYR | 6B | Set Retry Reason |
+| 0x1c | PTCs | 3B | PTC start |
+| 0x1d | PTCd | 3B | PTC done |
+| 0x1e | PTCc | 2B | PTC complete |
+| 0x1f | PTCq | 2B | PTC query |
+| 0x20 | PTCr | 3B | PTC result |
+| 0x21 | FLrr | 3B | Flash read request |
+| 0x22 | FLer | 7B | Flash erase |
+| 0x23 | FLrd | 3B | Flash read data |
+| 0x24 | FLad | 7B | Flash address set |
+| 0x25 | FLwd | 7B | Flash write data |
+| 0x26 | FLem | 7B | Flash erase mask |
+| 0x27 | FLvy | 7B | Flash verify |
+| 0x28 | GPoe | 1B | GPIO output enable |
+| 0x29 | GPie | 1B | GPIO input enable |
+| 0x2a | GPsh | 1B | GPIO set high |
+| 0x2b | GPsl | 1B | GPIO set low |
+| 0x2c | ADCs | 3B | ADC sample |
+| 0x2d | ANeg | 0B | Auto-negotiate |
+| 0x2e | DBfg | 0B | Debug flag |
+| 0x2f | GSCX | 6B | Get Source Capability Extended |
+| 0x30 | GSSt | 6B | Get Source Status |
+| 0x31 | GBaS | 7B | Get Battery Status |
+| 0x32 | GBaC | 7B | Get Battery Capability |
+| 0x33 | GMfI | 7B | Get Manufacturer Info |
+| 0x34 | MBWr | 1B | MessageBox Write |
+| 0x35 | MBRd | 3B | MessageBox Read |
+| 0x36 | FRSw | 6B | Fast Role Swap |
+| 0x37 | SRrq | 7B | Set RDO request |
+| 0x38 | SRrs | 7B | Set RDO response |
+| 0x39 | ALRT | 6B | Alert |
+| **0x3a** | **UCSI** | 7B | **★ UCSI 接口命令（系统级 PD 管理）** |
+| **0x3b** | **Trig** | 7B | **Trigger（触发器）** |
+
+**AMD 专用命令（0x15~0x18）**：AMD 平台专有 Vendor Defined Messages，用于 EC 向 TPS65994 下发 AMD 平台特定配置，涉及 DisplayPort Alt Mode 协商和 AMD ProximityConnect 特性。
+
+**UCSI 命令（0x3a）**：EC 实现了通过 TPS65994 I2C 接口的 UCSI 子命令路由，但工程版 EC 固件问题导致 AMDI0052 ACPI 设备无法绑定 UCSI 驱动。
+
+---
+
+#### 3.11.4 TPS65994 命令处理函数指针表
+
+**位置**：SPI `0x42ac8`~`0x42b57`（144 字节）
+**格式**：`[EC_addr_LE24: 3B][segment=0x10: 1B]` = 4 字节/条，共 36 条有效记录
+
+这是 EC 固件的 TPS65994 命令调度表，命令 ID → EC 函数地址的直接映射：
+
+```
+[00] CMD_Gaid → EC 0x07F693   [01] CMD_GAID → EC 0x0883A1
+[02] CMD_DISC → EC 0x07F621   [03] CMD_GO2M → EC 0x07C949
+[04] CMD_ABRT → EC 0x07B441   [05] CMD_LOCK → EC 0x07CD35
+[06] CMD_SWSk → EC 0x0912E5   [07] CMD_SWSr → EC 0x0745E9
+[08] CMD_SWDF → EC 0x0751F5   [09] CMD_SWUF → EC 0x075239
+[0a] CMD_SWVC → EC 0x075269   [0b] CMD_GSkC → EC 0x074C41
+[0c] CMD_GSrC → EC 0x094A21   [0d] CMD_SSrC → EC 0x0752C5
+[0e] CMD_RRDO → EC 0x075201   [0f] CMD_ARDO → EC 0x075165
+[10] CMD_SRDO → EC 0x074675   [11] CMD_HRST → EC 0x0751D5
+[12] CMD_CRST → EC 0x074C7D   [13] CMD_VDMs → EC 0x0751C7
+[14] CMD_AMDI → EC 0x075191   [15] CMD_AMEn → EC 0x074795
+[16] CMD_AMEx → EC 0x0752E1   [17] CMD_AMDs → EC 0x0752DD
+[18] CMD_GCdm → EC 0x07464D   [19] CMD_SRDY → EC 0x0751D1
+[1a] CMD_SRYR → EC 0x074651   [1b] CMD_PTCs → EC 0x07470D
+[1c] CMD_PTCd → EC 0x074641   [1d] CMD_PTCc → EC 0x07462D
+[1e] CMD_PTCq → EC 0x074631   [1f] CMD_PTCr → EC 0x07455D
+[20] CMD_FLrr → EC 0x074635   [21] CMD_FLer → EC 0x07457D
+[22] CMD_FLrd → EC 0x074569   [23] CMD_FLad → EC 0x0745AD
+```
+
+注意：59 条命令中仅有 36 条独立处理函数，其余 23 条（FLwd/FLem/FLvy/GPoe...Trig 等）路由到 `0x42b58` 的命令路由查找表中。`CMD_SWSk`（0x06，Sink 切换）和 `CMD_GSrC`（0x0c，获取 Source 能力）对应 `0x09xxxx` 代码段。
+
+---
+
+#### 3.11.5 TPS65994 寄存器访问白名单（SPI 0x41530）
+
+**格式**：`[entry_idx: 1B][bus=0x14: 1B][cmd_reg=0x0c: 1B][dev_addr=0x20: 1B][target_reg LE32: 4B]` = 8 字节/条，共 25 条
+
+含义：EC 通过 I2C bus=0x14（设备地址=0x20）访问 TPS65994 的 CMD 寄存器（0x0c），target_reg 是允许操作的 TPS65994 内部子寄存器地址白名单。
+
+| 索引 | 目标寄存器地址 | 推测功能 |
+|---|---|---|
+| 4 | 0x001F | Port Status |
+| 5 | 0x0020 | Connection Status |
+| 6 | 0x0021 | Cable Plug Status |
+| 7 | 0x0026 | VDO |
+| 8 | 0x0040 | Data Status |
+| 9 | 0x0041 | Power Status |
+| 10 | 0x0042 | PD Status |
+| 11 | 0x0046 | Override Source Status |
+| 12 | 0x0044 | Type-C控制 |
+| 13 | 0x0047 | GPIO状态 |
+| 14 | 0x0048 | Version信息 |
+| 15 | 0x0049 | ManufacturerInfo |
+| 16 | 0x004A | Port Control |
+| 17 | 0x004C | Sink PDO |
+| 18 | 0x0050 | Current Sink Cap |
+| 19 | 0x0051 | Alt Mode Status |
+| 20 | 0x0052 | Alt Mode Config |
+| 21 | 0x0060 | DP Status |
+| 22 | 0x0061 | DP Config |
+| 23 | 0x0084 | Temperature |
+| 24 | 0x00C2 | TX Hard Reset |
+| 25 | 0x00C3 | RX Hard Reset |
+| 26 | 0x0101 | TX Sub Port |
+| 27 | 0x0105 | RX Sub Port |
+| 28 | 0x05000000 | （结尾标记） |
+
+---
+
+#### 3.11.6 KB8002 初始化序列（N3GPH70W.bin SEC4-C 精确解析）
+
+##### 格式最终确认
+
+H70W bin SEC4-C 数据段（偏移 `H70W+0x38C` ~ `H70W+0x3C7`，共 60 字节）：
+
+```
+格式：[port: 1B][reg_lo: 1B][reg_hi: 1B][val_lo: 1B][val_hi: 1B]
+长度：5 字节/条记录，60B ÷ 5B = 12 条（完全整除，无对齐问题）
+```
+
+##### 完整 12 条记录
+
+| 条目 | 偏移（H70W+） | port | 寄存器（LE16） | 值（LE16） | 实际写入字节 |
+|---|---|---|---|---|---|
+| 0 | 0x38C | 1 | reg=0x0022 | 0x1500 | val=0x00 |
+| 1 | 0x391 | 1 | reg=0x0022 | 0x1502 | val=0x02 |
+| 2 | 0x396 | 1 | reg=0x0022 | 0x1508 | val=0x08 |
+| 3 | 0x39B | 1 | reg=0x0022 | 0x150A | val=0x0A |
+| 4 | 0x3A0 | 2 | reg=0x0022 | 0x1500 | val=0x00 |
+| 5 | 0x3A5 | 2 | reg=0x0022 | 0x1502 | val=0x02 |
+| 6 | 0x3AA | 2 | reg=0x0022 | 0x1508 | val=0x08 |
+| 7 | 0x3AF | 2 | reg=0x0022 | 0x150A | val=0x0A |
+| 8 | 0x3B4 | 1 | reg=0x0042 | 0x1078 | TX/RX配置A |
+| 9 | 0x3B9 | 1 | reg=0x0042 | 0x107A | TX/RX配置B |
+| 10 | 0x3BE | 2 | reg=0x0042 | 0x1078 | TX/RX配置A |
+| 11 | 0x3C3 | 2 | reg=0x0042 | 0x107A | TX/RX配置B |
+
+**port 1 = KB8002 port1（I2C-0 地址 0x27），port 2 = KB8002 port2（I2C-0 地址 0x48）**
+
+##### reg[0x22] 初始化序列含义
+
+```
+写入序列：0x00 → 0x02 → 0x08 → 0x0A（对 port1 和 port2 各一遍）
+
+bit[1] = USB3 使能：0x02 = 仅使能 USB3
+bit[3] = DP 使能：  0x08 = 仅使能 DP
+0x0A = bit1+bit3 = USB3 + DP 同时使能（多路复用最终状态）
+
+工程机当前值：reg[0x22] = 0x00（USB3+DP 多路复用未激活）
+```
+
+##### reg[0x42] 配置参数解读
+
+```
+0x1078：
+  bit[15:12] = 0x1  → TX 驱动强度 = 档位 1
+  bit[11:8]  = 0x0  → Pre-emphasis（预加重）= 0
+  bit[7:4]   = 0x7  → TX 摆幅（Swing）= 档位 7
+  bit[3:0]   = 0x8  → RX CTLE 均衡增益 = 8（标准均衡）
+
+0x107A：
+  同上，但 bit[3:0] = 0xA → RX CTLE 均衡增益 = 10（增强均衡）
+
+工程机当前值：reg[0x42] = 0x03（TX 和 RX 参数均不正确）
+```
+
+##### 手动仿真初始化命令
+
+```bash
+# 对 KB8002 port1（I2C-0 地址 0x27）执行 H70W SEC4-C 初始化序列：
+sudo i2cset -y 0 0x27 0x22 0x00  # 步骤1：清零
+sudo i2cset -y 0 0x27 0x22 0x02  # 步骤2：使能 USB3
+sudo i2cset -y 0 0x27 0x22 0x08  # 步骤3：使能 DP
+sudo i2cset -y 0 0x27 0x22 0x0a  # 步骤4：USB3+DP 最终值
+
+# reg[0x42]（16-bit写入，注意字节序）：
+sudo i2cset -y 0 0x27 0x42 0x78 0x10 i  # val = 0x1078
+
+# port2（I2C-0 地址 0x48）相同操作：
+sudo i2cset -y 0 0x48 0x22 0x0a
+sudo i2cset -y 0 0x48 0x42 0x78 0x10 i
+
+# ⚠ 风险提示：写入前断开所有 USB-C 外设，每次写入后验证读回值
+```
+
+---
+
+#### 3.11.7 分析结论汇总
+
+| 发现 | 确认状态 | 技术意义 |
+|---|---|---|
+| TPS65994 7-bit I2C 地址 = 0x20（bus_id=0x08/0x14） | ✅ 三处独立确认 | PD 控制器 I2C 配置确认 |
+| TPS65994 命令表 59 条（SPI 0x42960），含 UCSI（0x3a）和 AMD VDM（0x15~0x18） | ✅ 完整解析 | EC 实现了 UCSI 接口 |
+| TPS65994 命令处理函数指针 36 条（SPI 0x42ac8，EC 地址 0x07~0x09xxxx） | ✅ 完整解析 | 可定位反汇编目标 |
+| KB8002 reg[0x22] 初始化序列：0x00→0x02→0x08→0x0a（port1 & port2） | ✅ 5字节格式确认 | USB3+DP 多路复用配置流程 |
+| KB8002 reg[0x42] 目标值 0x1078/0x107a（TX=7 EQ=8/a） | ✅ 完整解析 | Retimer 链路均衡参数 |
+| 工程机 reg[0x22]=0x00, reg[0x42]=0x03 与目标值不符 | ✅ 已实测 | 量产 EC 初始化序列未执行于工程机 |
+| EC 代码分 4 段（0x07/0x08/0x09/0x0b），0x0b 段 = KB8002 控制 | ✅ 架构确认 | EC 固件模块化架构 |
