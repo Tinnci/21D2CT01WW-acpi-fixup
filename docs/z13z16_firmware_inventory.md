@@ -18,70 +18,85 @@
 
 ## 一、VBIOS (Z16 RX 6500M 独显)
 
-三个文件**完全相同** (SHA256 `d1d0ba82...`), 1MB:
+原始三个文件**完全相同** (SHA256 `d1d0ba82...`), 1MB:
 
-| 文件 | 说明 |
-|------|------|
-| `028.087260.rom` | AMD Device 028 (Navi 24), variant 087260 |
-| `vbios-028-094773.rom` | AMD Device 028, variant 094773 |
-| `vbios.rom` | 通用名称副本 |
+| 整理后文件 | 原始文件 | 说明 |
+|------------|----------|------|
+| `firmware/vbios/RX6500M_028_094773.rom` | `028.087260.rom` / `vbios-028-094773.rom` / `vbios.rom` | AMD Device 028 (Navi 24) |
 
 > Z13 无独显，此 VBIOS 仅适用于 Z16 RX 6500M 配置。
 
-## 二、BIOS (U2101) 独立版本清单
+## 二、BIOS SPI (U2101) — `firmware/bios/`
 
-按嵌入的 Lenovo BIOS ID 排序，共 **15 个唯一 U2101 dump**:
+共 **21 个文件** (19个来自刷机包 + 2个用户自己机器):
 
-| # | BIOS ID | 目录标签 | SHA256 前缀 | 备注 |
-|---|---------|----------|-------------|------|
-| 1 | N3GET04T | 1-bios-0.T3-ec-0.26-rev-0.2 | `85200179` | 最早工程测试版 (T后缀=Test) |
-| 2 | N3GET04T | 2-bios-0.T3-ec-0.26-rev-0.2 | `d9b24bce` | 同版本不同dump (不同机器) |
-| 3 | N3GET05M | 3-bios-0.05-ec-0.08-rev-0.3 | `2eb55ffe` | 工程版 (M后缀) |
-| 4 | N3GET05M | 4-bios-0.05-ec-0.07-rev-0.3 | `2af504ed` | 同BIOS不同EC |
-| 5 | N3GET05M | nm-e161-0.3-不开机 | `9b317df1` | 不开机板子的dump |
-| 6 | N3GET06W | 4-bios-0.06-ec-0.01A-rev-0.2 (u2102) | `d0fd636e` | 不同芯片位号，板rev 0.2 |
-| 7 | N3GET09W | 1-bios-0.05-ec-0.11-rev-0.3 | `007733a8` | (目录标签可能有误) |
-| 8 | N3GET09W | 4-bios-0.09-ec-0.11-rev-0.3 | `5eeb1b80` | |
-| 9 | N3GET09W | 5-bios-0.09-ec-0.11-rev-0.4 | `2a049580` | 板rev升级到0.4 |
-| 10 | N3GET10M | 6-bios-0.1-ec-0.01-rev-0.4 | `9148c3dc` | = 3-bios-ec-rev.0.4/u2101-bak |
-| 11 | N3GET10M | rec-0.4/u2101 | `45fc8608` | Recovery 用 |
-| 12 | N3GET10M | 3-bios-ec-rev.0.4 (工程版不亮机) | `5884d59c` | 工程版 dump |
-| 13 | N3GET10W | 5-bios-0.1-ec-0.12-rev-0.3 | `53045047` | W后缀 = 正式 |
-| 14 | N3GET21W | 7-bios=1.02-ec-0.-rec-0.4 | `06c31378` | 第一个正式版 |
-| 15 | N3GET21W | bios-1.02/U2101 | `8e19e743` | 不同dump (可能刷入了设置差异) |
-| 16 | N3GET42W | bios-1.02/NM-E161 | `04c7541c` | 独立完整板dump |
-| 17 | N3GET64W | bios-1.64/U2101-TEST | `9e1921a4` | 测试版 |
-| 18 | N3GET64W | bios-1.64/U2101 = bios-1.65/U2101 | `5f04c16c` | 1.64和1.65目录共享相同U2101 |
-| 19 | N3GET66W | Z13-0.4-1.66-BIOS.bin | `f040d644` | **最新版本** |
+### 工程版 (BIOS ID < N3GET20W)
 
-## 三、EC (U8505) 独立版本清单
+| 整理后文件名 | BIOS ID | 原始来源 | SHA256 前缀 |
+|-------------|---------|----------|-------------|
+| `N3GET04T_eng_rev0.2_machine1.bin` | N3GET04T | 1-bios-0.T3-ec-0.26-rev-0.2 | `85200179` |
+| `N3GET04T_eng_rev0.2_machine2.bin` | N3GET04T | 2-bios-0.T3-ec-0.26-rev-0.2 | `d9b24bce` |
+| `N3GET04W_z13_own_preflash_20260310.bin` | N3GET04W | **用户Z13 preflash备份** | `9bd9bcb1` |
+| `N3GET05M_eng_rev0.3_ec0.08.bin` | N3GET05M | 3-bios-0.05-ec-0.08-rev-0.3 | `2eb55ffe` |
+| `N3GET05M_eng_rev0.3_ec0.07.bin` | N3GET05M | 4-bios-0.05-ec-0.07-rev-0.3 | `2af504ed` |
+| `N3GET05M_eng_rev0.3_nme161_dead.bin` | N3GET05M | nm-e161-0.3-不开机 | `9b317df1` |
+| `N3GET06W_eng_rev0.2_u2102.bin` | N3GET06W | 4-bios-0.06-ec-0.01A (u2102芯片) | `d0fd636e` |
+| `N3GET09W_eng_rev0.3_ec0.11_dir0.05.bin` | N3GET09W | 1-bios-0.05-ec-0.11-rev-0.3 | `007733a8` |
+| `N3GET09W_eng_rev0.3_ec0.11.bin` | N3GET09W | 4-bios-0.09-ec-0.11-rev-0.3 | `5eeb1b80` |
+| `N3GET09W_eng_rev0.4_ec0.11.bin` | N3GET09W | 5-bios-0.09-ec-0.11-rev-0.4 | `2a049580` |
+| `N3GET10M_eng_rev0.4_ec0.01.bin` | N3GET10M | 6-bios-0.1-ec-0.01-rev-0.4 | `9148c3dc` |
+| `N3GET10M_eng_rev0.4_recovery.bin` | N3GET10M | rec-0.4 | `45fc8608` |
+| `N3GET10M_eng_rev0.4_dead.bin` | N3GET10M | 3-bios-ec-rev.0.4 工程版不亮机 | `5884d59c` |
+| `N3GET10W_eng_rev0.3_ec0.12.bin` | N3GET10W | 5-bios-0.1-ec-0.12-rev-0.3 | `53045047` |
 
-共 **12 个唯一 EC dump**:
+### 正式版 (BIOS ID ≥ N3GET21W)
 
-| # | EC ID | 目录标签 | SHA256 前缀 | 备注 |
-|---|-------|----------|-------------|------|
-| 1 | (EC 0.26) | 1-bios-0.T3-ec-0.26-rev-0.2 | `be75a9c8` | 最早期 EC |
-| 2 | (EC 0.26) | 2-bios-0.T3-ec-0.26-rev-0.2 | `fc68437f` | 不同机器dump |
-| 3 | (EC 0.08) | 3-bios-0.05-ec-0.08-rev-0.3 | `e13a4725` | |
-| 4 | (EC 0.07) | 4-bios-0.05-ec-0.07-rev-0.3 = nm..不开机 | `f844e8dc` | 3份相同 |
-| 5 | (EC 0.01) | 6-bios-0.1-ec-0.01-rev-0.4 = 3-bios..bak | `7b96ea46` | 3份相同 |
-| 6 | (EC ?) | 3-bios-ec-rev.0.4/U8505 25Q256J BK | `1bbd653c` | |
-| 7 | (EC 0.11) | ec-0.11-rev-0.2 = 4/7 bios dirs | `69a3a57d` | **5份相同** |
-| 8 | (EC 0.11) | 5-bios-0.09-ec-0.11-rev-0.4 | `f35f330a` | 板rev 0.4 |
-| 9 | N3GHT12W | 5-bios-0.1-ec-0.12-rev-0.3 | `a08d4dfd` | |
-| 10 | N3GHT25W | bios-1.02/U8505 | `0884b9cc` | |
-| 11 | N3GHT64W | bios-1.64+1.65 (3份相同) | `38cf2206` | U8505-TEST = U8505 |
-| 12 | (EC ?) | rec-0.4/U8505 | `f5fce895` | Recovery 用 |
+| 整理后文件名 | BIOS ID | 原始来源 | SHA256 前缀 |
+|-------------|---------|----------|-------------|
+| `N3GET21W_v1.02_rev0.4_7.bin` | N3GET21W | 7-bios=1.02-ec-0.-rec-0.4 | `06c31378` |
+| `N3GET21W_v1.02_rev0.4.bin` | N3GET21W | bios-1.02/U2101 | `8e19e743` |
+| `N3GET42W_v1.02_nme161_full.bin` | N3GET42W | bios-1.02/NM-E161 完整板dump | `04c7541c` |
+| `N3GET47W_z13_own_chinafix.bin` | N3GET47W | **用户Z13 来自矽曦论坛** | `9c1c8db4` |
+| `N3GET64W_v1.64_rev0.4_test.bin` | N3GET64W | bios-1.64 TEST | `9e1921a4` |
+| `N3GET64W_v1.64_rev0.4.bin` | N3GET64W | bios-1.64 = bios-1.65 | `5f04c16c` |
+| `N3GET66W_v1.66_rev0.4.bin` | N3GET66W | Z13-0.4-1.66-BIOS.bin **最新** | `f040d644` |
 
-### 独立 EC 固件
+## 三、EC SPI (U8505) — `firmware/ec_spi/`
 
-| 文件 | 大小 | EC ID | SHA256 前缀 |
-|------|------|-------|-------------|
-| ec-test-1.64.bin | 320KB | N3GHT64W | `b99b2ee0` |
+共 **13 个文件** (12个来自刷机包 + 1个用户自己机器):
 
-> 这是提取出的纯 EC 固件镜像 (非完整 SPI dump)，可用于通过 UEFI 更新 EC。
+### 工程版
 
-## 四、目录重复分析
+| 整理后文件名 | EC ID | 原始来源 | SHA256 前缀 |
+|-------------|-------|----------|-------------|
+| `EC0.26_eng_rev0.2_machine1.bin` | (EC 0.26) | 1-bios-0.T3-ec-0.26-rev-0.2 | `be75a9c8` |
+| `EC0.26_eng_rev0.2_machine2.bin` | (EC 0.26) | 2-bios-0.T3-ec-0.26-rev-0.2 | `fc68437f` |
+| `EC0.08_eng_rev0.3.bin` | (EC 0.08) | 3-bios-0.05-ec-0.08-rev-0.3 | `e13a4725` |
+| `EC0.07_eng_rev0.3.bin` | (EC 0.07) | 4-bios-0.05-ec-0.07-rev-0.3 = nm 不开机 | `f844e8dc` |
+| `EC_eng_rev0.4_25q256j_bk.bin` | (未知) | 3-bios-ec-rev.0.4/U8505 25Q256J BK | `1bbd653c` |
+| `EC0.11_eng_rev0.2.bin` | (EC 0.11) | ec-0.11-rev-0.2 (=4-bios-0.09/=7-bios=1.02) | `69a3a57d` |
+| `EC0.11_eng_rev0.4.bin` | (EC 0.11) | 5-bios-0.09-ec-0.11-rev-0.4 | `f35f330a` |
+| `EC0.01_eng_rev0.4.bin` | (EC 0.01) | 6-bios-0.1-ec-0.01-rev-0.4 = 3..bak | `7b96ea46` |
+| `N3GHT12W_EC0.12_eng_rev0.3.bin` | N3GHT12W | 5-bios-0.1-ec-0.12-rev-0.3 | `a08d4dfd` |
+| `EC_eng_rev0.4_recovery.bin` | (未知) | rec-0.4/U8505 | `f5fce895` |
+
+### 正式版
+
+| 整理后文件名 | EC ID | 原始来源 | SHA256 前缀 |
+|-------------|-------|----------|-------------|
+| `N3GHT15W_z13_own_20260313.bin` | N3GHT15W | **用户Z13 EC SPI dump** | `9b4a58ca` |
+| `N3GHT25W_v1.02.bin` | N3GHT25W | bios-1.02/U8505 | `0884b9cc` |
+| `N3GHT64W_v1.64.bin` | N3GHT64W | bios-1.64 = 1.65 (3份相同) | `38cf2206` |
+
+## 四、独立 EC 固件 — `firmware/ec/`
+
+| 文件 | 大小 | EC ID | 说明 |
+|------|------|-------|------|
+| `N3GHT64W_v1.64_standalone.bin` | 320KB | N3GHT64W | 刷机包中提取的纯EC镜像 |
+| `N3GHT68W.FL2` | 320KB | N3GHT68W | Lenovo 官方 EC 更新文件 |
+| `N3GHT69W.FL2` | 320KB | N3GHT69W | Lenovo 官方 EC 更新文件 (最新) |
+
+## 五、原始目录重复分析
 
 以下目录对包含**完全相同**的文件 (仅命名差异 `rev-0.x` vs `rev.0.x`):
 
@@ -94,7 +109,7 @@
 
 > 共 6 对重复目录。可安全删除 `.0.x` 后缀的那批（它们是 `-0.x` 的副本）。
 
-## 五、跨目录相同文件
+## 六、跨目录相同文件 (原始数据中的重复)
 
 部分文件虽在不同名称目录中，内容完全相同:
 
@@ -104,7 +119,7 @@
 - **U8505** `38cf2206`: `bios-1.64-*/U8505-TEST-1.64.bin` = `bios-1.64-*/U8505.bin` = `bios-1.65-*/U8505.bin`
 - **U2101** `5f04c16c`: `bios-1.64-*/U2101.bin` = `bios-1.65-*/U2101.bin`
 
-## 六、版本时间线
+## 七、版本时间线
 
 ```
 板修订 rev 0.2 (原型)
@@ -123,12 +138,13 @@
   └─ BIOS 0.1  (N3GET10M) + EC 0.01  ← rec-0.4 recovery
   └─ BIOS 1.02 (N3GET21W) + EC 0.11  ← 第一个正式版
   └─ BIOS 1.02 (N3GET42W)            ← NM-E161 完整dump (晚于21W)
-  └─ BIOS 1.64 (N3GET64W) + EC 1.64 (N3GHT64W)  ← 正式版
+    └─ BIOS ?    (N3GET47W)            ← 用户Z13 chinafix 来源
+    └─ BIOS 1.64 (N3GET64W) + EC 1.64 (N3GHT64W)  ← 正式版
   └─ BIOS 1.65 (N3GET64W) + EC 1.65 (N3GHT64W)  ← 目录标签不同，内容=1.64
   └─ BIOS 1.66 (N3GET66W)            ← Z13-0.4-1.66-BIOS.bin 最新
 ```
 
-## 七、特殊/问题文件
+## 八、特殊/问题文件
 
 | 文件 | 说明 |
 |------|------|
@@ -137,13 +153,17 @@
 | `3-bios-ec-rev.0.4/U8505 2..BK.rar` | 压缩的EC备份 (150KB) |
 | `U8505-TEST-1.64.bin` | 与正式 U8505.bin 完全相同 |
 | `bios-1.65` 目录 | U2101 和 U8505 均与 1.64 目录相同 |
+| `N3GET04W` (用户preflash) | 用户自己机器原始BIOS，工程版 |
+| `N3GHT15W` (用户EC SPI) | 用户自己机器EC dump |
 
-## 八、统计
+## 九、统计
 
-- 总文件数: ~65 个 (含 StatusRegVal 和 .DS_Store)
-- 唯一二进制文件: ~28 个
-- 重复副本: ~22 个
-- 总磁盘占用: ~2 GB
-- BIOS 独立版本: 15-19 个
-- EC 独立版本: 12 个
-- VBIOS: 1 个 (3份相同)
+- 原始总文件数: ~65 个 (含 StatusRegVal 和 .DS_Store)
+- 原始唯一二进制文件: ~28 个
+- 原始重复副本: ~22 个
+- 整理后文件: **21 BIOS** + **13 EC SPI** + **3 EC FW** + **1 VBIOS** = **38 文件**
+- 总磁盘占用 (整理后): ~1.1 GB
+- BIOS 独立版本: 21 个 (含用户自己机器)
+- EC SPI 独立版本: 13 个 (含用户自己机器)
+- EC FW 独立版本: 3 个
+- VBIOS: 1 个
