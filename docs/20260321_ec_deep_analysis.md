@@ -277,5 +277,164 @@ N3GHT15W 自用机 EC SPI Flash (32MB) 完整布局:
 
 ---
 
+## 8. EC 固件基地址与 Cortex-M 向量表
+
+**分析日期**: 2026-03-21  
+**方法**: LDR literal (Thumb T1/T2) 字节级扫描 + 指针分类
+
+### 8.1 基地址确定
+
+通过扫描 EC 固件中所有 `LDR Rt, [PC, #imm]` 指令的字面量池引用，测试不同基地址下"Flash 自引用"数的最大值：
+
+| 候选基地址 | Flash 自引用数 | 说明 |
+|-----------|--------------|------|
+| **0x10070000** | **474** | ← 最高，确认为正确基地址 |
+| 0x10080000 | 425 | |
+| 0x10060000 | 184 | |
+| 0x00000000 | 128 | |
+
+启动代码字面量池 (EC+0x035C) 中直接包含基地址确认：
+
+```
+EC+0x035C: 0x10070000  ← Flash 基地址
+EC+0x0360: 0x10071448  ← CRC 校验表
+EC+0x0368: 0x10080000  ← Flash 段 1
+EC+0x0370: 0x10090000  ← Flash 段 2
+EC+0x0378: 0x100A0000  ← Flash 段 3
+EC+0x0380: 0x100B0000  ← Flash 段 4
+EC+0x0388: 0x100BFFC0  ← Flash 末尾
+```
+
+### 8.2 虚拟地址空间
+
+```
+EC 虚拟地址映射:
+  Flash:       0x10070000 - 0x100B4000  (272 KB, = SPI[0x1000:0x45000])
+  Flash 段:    0x10070000 → 5 × 64KB (最后段到 0x100BFFC0)
+  SRAM:        0x200C0000 - 0x200C8000  (32 KB)
+  Peripherals: 0x40000000 - 0x4F672004
+  ARM System:  0xE000xxxx (NVIC, SCB, SysTick)
+```
+
+### 8.3 Cortex-M 向量表
+
+向量表位于 **EC+0x0100** (vaddr 0x10070100)，共 80 个向量入口：
+
+| 编号 | 名称 | 地址 | EC偏移 |
+|------|------|------|--------|
+| 0 | Initial SP | 0x200C8000 | SRAM 栈顶 |
+| 1 | Reset | 0x100701F5 | 0x01F4 |
+| 2 | NMI | 0x10070291 | 0x0290 |
+| 3 | HardFault | 0x1007029D | 0x029C |
+| 4 | MemManage | 0x100702A9 | 0x02A8 |
+| 5 | BusFault | 0x100702B5 | 0x02B4 |
+| 6 | UsageFault | 0x100702C1 | 0x02C0 |
+| 11 | SVCall | 0x100702CD | 0x02CC |
+| 12 | DebugMon | 0x100702D9 | 0x02D8 |
+| 14 | PendSV | 0x100702E5 | 0x02E4 |
+| 15 | SysTick | 0x100702F1 | 0x02F0 |
+| 16-18 | IRQ0-2 | 0x100702FD | 默认处理 |
+| 19 | IRQ3 | 0x1008B9F9 | 0x1B9F8 |
+| ... | ... | ... | ... |
+| 63 | IRQ47 | 0x1008BF59 | 0x1BF58 |
+
+默认 IRQ 处理函数 (0x100702FD) 用于未使用的中断号。
+48 个有效 IRQ (IRQ0-IRQ63) — 标准 Cortex-M 中断控制器配置。
+
+### 8.4 启动流程
+
+```
+Reset:     0x100701F4  ← 向量表 → CRT0 初始化
+  ↓
+CRT0:      0x10070240  ← 初始化 BSS/数据段
+  ↓
+Flash CRC: 0x100702F4  ← CRC 校验段完整性 (5 × 64KB)
+  ↓
+VTOR 设置: 将 0x10070100 写入 SCB_VTOR (0xE000ED08)
+  ↓
+SP 加载:   SP = 0x200C8000 (SRAM 顶部)
+  ↓
+main:      0x10070141  ← 跳转到主程序入口
+  ↓
+EC main:   0x1007166C  ← 第一个 PUSH 函数 (系统初始化)
+```
+
+### 8.5 _EC 头部结构 (修正)
+
+```
+EC+0x0000: _EC 头部 (256 字节)
+  [0x00] 5F 45 43 02    Magic "_EC", header ver=2
+  [0x04] 40 01 05 00    total_size = 0x50140 = 327,936
+  [0x08] 00 00 05 00    data_size  = 0x50000 = 327,680
+  [0x0C] 01 00 00 00    flags = 1
+  [0x10] 02 00 00 00    version = 2
+  [0x14] CB A8 46 0E    CRC/Hash
+  [0x40-0x5F]           Pad (0xEC×32)
+  [0x60-0x9F]           SHA-256 hash (64 bytes)
+  [0xA0-0xBF]           Pad (0xEC×32)
+  [0xC0] 5E 4D 3B 2A    Sub-header magic
+  [0xC4-0xCF]           Flash layout descriptors
+  [0xD0-0xDF]           Boot config (flash boundaries)
+  [0xF8] A5 65 5F 5D    Sub-header checksum
+```
+
+---
+
+## 9. 跨版本分析与 LADD 描述符
+
+### 9.1 函数签名匹配 (R1 残留代码 348KB)
+
+使用 PUSH {.., LR} 序言提取 200 个函数签名 (首 8 字节)，与各版本匹配：
+
+| 目标版本 | 匹配率 | 说明 |
+|---------|--------|------|
+| N3GHT15W (当前) | 52.5% (105/200) | 最高，最接近当前版本 |
+| N3GHT25W | 41.0% (41/100) | 中度相似 |
+| N3GHT64W | 20.0% (20/100) | 较低相似度 |
+| EC0.11_eng | 20.0% (20/100) | 工程版，差异大 |
+
+R1 残留代码在其他 dump 中未找到完整匹配 (仅 33-103 字节的片段)，进一步确认其为独立的旧版本固件残留。
+
+### 9.2 N3GHT25W/64W 双固件结构
+
+N3GHT25W 和 N3GHT64W 在 SPI 0x100000 处包含 **LADD 描述符表**，定义 Flash 区域布局：
+
+```
+LADD 描述符 (SPI 0x100000, 两版本完全一致):
+  [ 0] addr=0x00E47000  size=0x00080000 (512KB)
+  [ 7] addr=0x000C5000  size=0x00380000 (3.5MB)
+  [ 8] addr=0x00445000  size=0x00051000 (332KB)
+  [ 9] addr=0x0158F000  size=0x009B0000 (10MB)
+  [13] addr=0x00000000  size=0x00100000 (1MB)
+```
+
+这些 dump 在 SPI 0x100000 以上包含大量 ARM 代码区域：
+
+| Dump | 区域 A | 区域 B | 区域 C | 架构 |
+|------|--------|--------|--------|------|
+| N3GHT25W | ~150KB | ~720KB | ~890KB | Thumb-2 + SVC #0xF2 |
+| N3GHT64W | ~150KB | ~720KB | ~890KB | ARM 32-bit (bootloader) |
+
+N3GHT64W 区域 B 入口代码 (`ldr ip, [pc]; ldr sp, [ip]; blx ip`) 为标准 ARM 32-bit bootloader 模式。
+N3GHT25W 区域 B 包含 `svc #0xf2` 系统调用，为 RTOS 层代码。
+
+### 9.3 N3GHT25W 双版本镜像
+
+N3GHT25W dump 包含双版本：
+- **主版本**: N3GHT25W (primary)
+- **备份版本**: N3GHT22W (backup)
+- 字节匹配率仅 19.5% — 版本差异显著
+
+### 9.4 EC0.11_eng_rev0.4 异常结构
+
+- 21.9MB 连续 ARM 代码块 (0x092A000-0x1E0F000)
+- 无 _EC 头部标记，无 N3GHT 版本字符串
+- IBM 版权位于异常偏移 0x165195 (标准位于 0x002584)
+- R2 区域有数据但交错映射匹配率为 0% (不同于 N3GHT15W 的 100%)
+
+---
+
 *分析脚本: `scripts/deep_ec_analysis.py`*  
-*逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `reverse_ec_mapping.py`, `reverse_ec_final.py`*
+*逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `reverse_ec_mapping.py`, `reverse_ec_final.py`*  
+*Capstone 分析脚本: `scripts/ec_capstone_analysis.py`, `scripts/ec_cross_version_analysis.py`*  
+*基地址分析脚本: `scripts/ec_ldr_scan.py`, `scripts/ec_base_verify.py`, `scripts/ec_startup_disasm.py`*
