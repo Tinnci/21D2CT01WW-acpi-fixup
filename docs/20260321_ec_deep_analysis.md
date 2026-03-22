@@ -432,9 +432,105 @@ N3GHT25W dump 包含双版本：
 - IBM 版权位于异常偏移 0x165195 (标准位于 0x002584)
 - R2 区域有数据但交错映射匹配率为 0% (不同于 N3GHT15W 的 100%)
 
+## 10. 跨EC固件基地址/向量表/启动流程对比
+
+### 10.1 分析方法
+
+使用 `scripts/ec_cross_base_analysis.py` 对全部 13 个 SPI dump + 3 个独立 EC 文件进行自动化扫描：
+1. 定位所有 `_EC` header → 提取 EC blob
+2. 对每个 blob 测试 21 个候选基地址 (0x10060000-0x10090000 步进 0x1000)
+3. 统计 LDR T1 (Thumb 短 LDR) 的 flash self-ref 数量，最高者为最佳基地址
+4. 在 EC+0x0100/0x0120 扫描 Cortex-M 向量表 (SP + Thumb function pointers)
+5. 检查启动流程标志 (base_ref literal pool)
+
+### 10.2 基地址对比总表
+
+共扫描到 18 个有效 EC blob（含 N3GHT25W/64W 的双版本）。
+
+| 版本 | _EC ver | blob大小 | 最佳基地址 | flash_refs | VT偏移 | SP | 向量数 |
+|------|---------|----------|------------|------------|--------|-----|--------|
+| N3GHT05T (×2) | v2 | 224KB | 0x10070000 | 380-381 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT07T | v2 | 224KB | 0x10070000 | 402 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT08M | v2 | 224KB | 0x10070000 | 379 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT11M | v2 | 320KB | **0x10060000** | 385 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT12W | v2 | 320KB | **0x10060000** | 280 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT14T (×3) | v2 | 320KB | **0x10060000** | 403 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT15W | v2 | 320KB | 0x10070000 | 474 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT22W | v2 | 316KB | 0x10070000 | 460 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT25W | v2 | 316KB | 0x10070000 | 453 | +0x0100 | 0x200C8000 | 79 |
+| N3GHT64W (×3) | v2 | 316KB | 0x10070000 | 488 | +0x0100 | **0x200C7C00** | 79 |
+| N3GHT68W | **v1** | 320KB | 0x10070000 | 488 | **+0x0120** | **0x200C7C00** | 79 |
+| N3GHT69W | **v1** | 320KB | 0x10070000 | 480 | **+0x0120** | **0x200C7C00** | 79 |
+
+### 10.3 关键发现
+
+#### 10.3.1 基地址分为两组
+
+- **0x10070000 组** (13个blob): N3GHT05T, 07T, 08M, 15W, 22W, 25W, 64W, 68W, 69W
+  - 包含 224KB (早期工程版) 和 316KB (量产版) 两种大小
+  - startup literal pool 在 EC+0x035C (ver=2) 或 EC+0x037C (ver=1)
+
+- **0x10060000 组** (5个blob): N3GHT11M, 12W, 14T
+  - 均为 320KB，_EC ver=2
+  - Reset handler 仍为 0x100701F5 → EC+0x**1**01F4 (在 base+0x10000 处)
+  - 这表明 320KB blob 中可能有 64KB 的前缀区域，实际代码从 0x10070000 开始
+  - flash_refs 低于 0x10070000 组（280-403 vs 379-488），可能是 LDR 扫描范围差异所致
+
+#### 10.3.2 向量表偏移与 _EC header 版本关联
+
+- **_EC header ver=2**: 向量表在 EC+0x**0100** (header 256 字节)
+  - Copyright 在 EC+0x01584
+- **_EC header ver=1**: 向量表在 EC+0x**0120** (header 288 字节，多 32 字节)
+  - Copyright 在 EC+0x015A4 (偏移多 0x20)
+  - 仅见于 N3GHT68W/69W 的 .FL2 独立文件
+
+#### 10.3.3 SP (栈指针) 演进
+
+- **0x200C8000**: 早期至中期版本 (N3GHT05T → N3GHT25W)
+  - SRAM 区域: 0x200C0000-0x200C8000 = 32KB 完整使用
+- **0x200C7C00**: 较新版本 (N3GHT64W, 68W, 69W)
+  - 比 0x200C8000 少 1KB (0x400 字节)
+  - 可能用于 MPU 保护区、栈溢出守护页或硬件保留
+
+#### 10.3.4 完全不变的常量 (所有版本)
+
+- **Reset handler**: 0x100701F5 (无一例外)
+- **NMI handler**: 0x10070289/0x10070291 (两种变体)
+- **HardFault handler**: 0x10070295/0x1007029D (两种变体)
+- **有效向量数**: 79 (16 个系统 + 63 个 IRQ)
+- **Copyright 字符串**: 始终存在 "Copyright IBM" / "Copyright LENOVO"
+
+#### 10.3.5 N3GHT25W/64W 大型区域
+
+在 SPI 0x100000 以上发现额外 ARM 代码区域:
+- SPI 0x100000-0x124000 (144KB): LADD 描述符表区域，base=0x00000000
+- SPI 0x12A000-0x1D7000 (692KB): 未知 ARM 区域，base=0x00200000
+- 更多区域分析因运行时间过长被中断，待后续深入
+
+### 10.4 版本演进时间线
+
+```
+早期工程版 (224KB, base=0x10070000):
+  N3GHT05T → N3GHT07T → N3GHT08M
+
+量产版过渡 (320KB, base=0x10060000):
+  N3GHT11M → N3GHT12W → N3GHT14T
+
+量产版成熟 (316-320KB, base=0x10070000, SP=0x200C8000):
+  N3GHT15W → N3GHT22W → N3GHT25W
+
+最新版 (316-320KB, base=0x10070000, SP=0x200C7C00):
+  N3GHT64W → N3GHT68W → N3GHT69W
+```
+
+### 10.5 EC0.11_eng_rev0.4 异常
+
+此文件无 _EC header，未被自动分析。前次分析发现其包含 21.9MB 连续 ARM 代码块，结构与标准 EC firmware 完全不同，可能是完整 SPI flash 原始镜像或调试版本。
+
 ---
 
 *分析脚本: `scripts/deep_ec_analysis.py`*  
 *逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `reverse_ec_mapping.py`, `reverse_ec_final.py`*  
 *Capstone 分析脚本: `scripts/ec_capstone_analysis.py`, `scripts/ec_cross_version_analysis.py`*  
-*基地址分析脚本: `scripts/ec_ldr_scan.py`, `scripts/ec_base_verify.py`, `scripts/ec_startup_disasm.py`*
+*基地址分析脚本: `scripts/ec_ldr_scan.py`, `scripts/ec_base_verify.py`, `scripts/ec_startup_disasm.py`*  
+*跨EC对比脚本: `scripts/ec_cross_base_analysis.py`*
