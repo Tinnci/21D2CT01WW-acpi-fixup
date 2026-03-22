@@ -623,13 +623,135 @@ N3GHT69W  - 99b178c9e6b8
 - Base Address: 0x10070000
 - SRAM: 0x200C0000 - 0x200C8000
 
+## 13. 完整 SPI Flash 布局 (N3GHT25W/64W)
+
+N3GHT25W 和 N3GHT64W 的 32MB SPI dump 不仅包含 EC 固件,还包含完整的 AMD PSP 固件、UEFI BIOS、TPS PD 控制器固件等。
+
+### 13.1 EC 双镜像 A/B 布局
+
+**关键发现**: 大型 SPI dump (N3GHT25W/64W) 包含 **两个独立的 EC 镜像**:
+
+| SPI 偏移 | 版本 | 大小 | 说明 |
+|----------|------|------|------|
+| 0x001000 | N3GHT25W | 316KB | Slot A (当前活跃) |
+| 0x0A0000 | N3GHT22W | 316KB | Slot B (上一版本) |
+
+- **N3GHT64W**: Slot A = N3GHT64W, Slot B = N3GHT64W (同版本)
+- **早期 dump** (工程版): 仅有 Slot A @ SPI 0x001000
+- SPI 0x000000 处不是 _EC header,而是 EC 管理数据 (`0010000000000a00...`)
+
+这说明 EC 采用 **A/B 交替更新机制**:固件更新写入非活跃 slot,成功后切换活跃标记。
+
+### 13.2 LADD 目录结构
+
+SPI dump 中有 **3 个 LADD 描述符**:
+
+1. **EC 内部 LADD** @ SPI 0x044FE2 / 0x0E2E3A — EC 固件内部的函数/模块分发表
+2. **Flash 主目录 LADD** @ SPI 0x100000 — 整个 SPI flash 的区域映射表
+
+Flash 主 LADD 包含 26 个条目,映射所有固件组件的 SPI 偏移和大小。
+
+### 13.3 AMD PSP 固件组件
+
+SPI 0x106000 处有 **$PL2 (PSP Level 2 Directory)**,包含 46-48 个固件条目:
+
+| 类型 | 名称 | 大小 | 说明 |
+|------|------|------|------|
+| 0x00 | AMD_PUBLIC_KEY | 1KB | AMD 公钥 |
+| 0x01 | PSP_BOOT_LOADER | 7KB | PSP 启动加载器 |
+| 0x02 | PSP_TRUSTED_OS | 89KB | PSP 可信 OS |
+| 0x04 | PSP_NV_DATA | 128KB | PSP 非易失性数据 |
+| 0x08 | SMU_OFFCHIP_FW | 135KB ×2 | SMU 固件 (双份) |
+| 0x0C | BOOT_TRUSTLETS | 136KB | 启动信任链 |
+| 0x24 | MP2_FW | 19KB | 传感器处理器固件 |
+| 0x25 | DRIVER_ENTRIES | 176KB | 驱动入口 |
+| 0x28 | MP2_FW_2 | 138KB | MP2 固件备份 |
+| 0x30 | ABL0 | 459KB | AMD Boot Loader |
+| 0x47 | PSP_SEV | 16KB | 安全加密虚拟化 |
+| **0x5A** | **USB4_DXIO_PHY** | **308KB + 62KB** | **USB4 / DXIO PHY 固件** |
+| 0x5F | DXIO_PHY_FW | 384KB | DXIO PHY 固件 |
+| 0x73 | TPM_SPI | 75KB | TPM SPI 固件 |
+
+### 13.4 BIOS 组件
+
+- **$BL2 (BIOS L2 Directory)** @ SPI 0x486000 — BIOS 组件目录
+- **APCB** @ SPI 0x487000, 0x496000 — AMD Platform Configuration Block
+- **APOB** @ SPI 0x499000 — AMD Platform Output Block
+- **UEFI Firmware Volume** @ SPI 0x787000 — 7168KB, GUID `5473c07a-3dcb-4dca-bd6f-1e9689e7349a`
+  - `_FVH` 标志位于 SPI 0x787028
+
+### 13.5 完整 SPI 地图 (N3GHT25W)
+
+```
+0x000000-0x001000  EC 管理数据 (4KB)
+0x001000-0x050000  EC Image A — N3GHT25W (316KB)
+0x050000-0x0A0000  EC 中间数据 / 备用区域 (320KB)
+0x0A0000-0x0EF000  EC Image B — N3GHT22W (316KB)
+0x0EF000-0x100000  EC 控制块 / NV 存储
+
+0x100000-0x101000  LADD Flash 目录 (4KB)
+0x101000-0x106000  PSP Cookie / 签名区 (20KB)
+0x106000-0x486000  PSP L2 Directory + 全部 PSP 固件 (3.5MB)
+  ├─ 0x106000 $PL2 header
+  ├─ 0x106400 AMD_PUBLIC_KEY
+  ├─ 0x106900 PSP_BOOT_LOADER
+  ├─ 0x108700 TPM_SPI
+  ├─ 0x11AF00 PSP_TRUSTED_OS
+  ├─ 0x131400 SMU_FW (×2)
+  ├─ 0x175200 BOOT_TRUSTLETS
+  ├─ 0x1D8000 MP2_FW + DRIVER_ENTRIES
+  ├─ 0x207F00 MP2_FW_2
+  ├─ 0x22D900 ABL0 (459KB)
+  ├─ 0x2A1800 DIAG_BOOT_LOADER (×2)
+  ├─ 0x2CA800 USB4_DXIO_PHY (308KB + 62KB)
+  ├─ 0x326000 DXIO_PHY (384KB)
+  └─ 0x386000 TYPE71 + 签名数据
+
+0x486000-0x4D7000  BIOS L2 + APCB + APOB (324KB)
+0x4D7000-0x787000  Secondary PSP/BIOS 备份区 (2.75MB)
+0x787000-0xE87000  UEFI Firmware Volume (7MB)
+0xE87000-0xF48000  Post-UEFI 数据 (772KB)
+0xF48000-0x1000000 空白区至 16MB
+
+0x1000000-0x2000000 上半 16MB (大部分空白)
+  ├─ 0x1C50000 R1 journal (本 dump 为空)
+  └─ 0x1D00000 R2 journal (本 dump 为空)
+```
+
+### 13.6 大型区域识别
+
+在 SPI 0x100000 以上的 10 个大型非空区域已全部识别:
+
+| 区域 | 大小 | 内容 | 熵 |
+|------|------|------|-----|
+| 0x106000 | 120KB | PSP $PL2 入口 + Boot Loader + CryptoModExp | 5.4 (code) |
+| 0x12A000 | 692KB | AMD Trusted Applet (amd.dr, gpd.ta) | 6.9 (code) |
+| 0x1D8000 | 336KB | MP2/Driver 数据 | 4.4 (structured) |
+| 0x22D000 | 520KB | PSP BL (encrypted/signed) | 4.0 (structured) |
+| 0x2C1000 | 676KB | TPSHTRMP (TPS65988 PD 控制器固件) | 0.6 (sparse+code) |
+| 0x386000 | 356KB | $PS1 签名 + PD 配置数据 | 3.5 (structured) |
+| 0x499000 | 232KB | APOB + 压缩数据 | 7.8 (compressed) |
+| 0x4D7000 | 284KB | 备份 FV (压缩) | 7.9 (compressed) |
+| 0x787000 | 6700KB | UEFI Firmware Volume (_FVH) | 7.9 (compressed) |
+| 0xE87000 | 412KB | Post-UEFI 稀疏数据 | 1.8 (sparse) |
+
+**TPSHTRMP** 区域 (0x2C1000) 包含 TPS65988 USB-C PD 控制器固件,含 2 个 TPSHTRMP 标签。
+
+**跨版本对比** (N3GHT25W vs N3GHT64W, 首 64KB 匹配率):
+- AMD TA 区域: **81.7%** (大部分相同)
+- MP2 数据: **92.4%** (高度一致)
+- PSP BL: **3.3%** (完全不同,版本相关)
+- TPS PD FW: **29.0%** (部分更新)
+- UEFI FV: **0.7%** (完全不同)
+
 ---
 
 *分析脚本: `scripts/deep_ec_analysis.py`*  
-*逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `reverse_ec_mapping.py`, `reverse_ec_final.py`*  
+*逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `scripts/reverse_ec_mapping.py`, `reverse_ec_final.py`*  
 *Capstone 分析脚本: `scripts/ec_capstone_analysis.py`, `scripts/ec_cross_version_analysis.py`*  
 *基地址分析脚本: `scripts/ec_ldr_scan.py`, `scripts/ec_base_verify.py`, `scripts/ec_startup_disasm.py`*  
 *跨EC对比脚本: `scripts/ec_cross_base_analysis.py`*  
 *IRQ handler 对比脚本: `scripts/ec_irq_compare.py`*  
 *Ghidra/IDA 加载脚本: `scripts/ghidra_ec_loader.py`, `scripts/ida_ec_loader.py`*  
-*EC blob 提取工具: `scripts/ec_extract_blob.py`*
+*EC blob 提取工具: `scripts/ec_extract_blob.py`*  
+*SPI 布局分析: `scripts/ec_large_regions.py`, `scripts/ec_ladd_psp_parse.py`, `scripts/ec_ab_layout.py`*
