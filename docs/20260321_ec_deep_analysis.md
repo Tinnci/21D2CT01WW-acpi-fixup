@@ -525,10 +525,111 @@ N3GHT25W dump 包含双版本：
 
 此文件无 _EC header，未被自动分析。前次分析发现其包含 21.9MB 连续 ARM 代码块，结构与标准 EC firmware 完全不同，可能是完整 SPI flash 原始镜像或调试版本。
 
+## 11. 跨版本 IRQ Handler 对比
+
+### 11.1 向量表结构详解
+
+通过详细 VT dump 确认以下结构 (以 N3GHT15W 为例):
+
+- VT 从 EC+0x0100 开始（_EC header 占据 EC+0x0000 到 EC+0x00FF）
+- 80 个条目,共 320 字节 (EC+0x0100 到 EC+0x0240)
+- EC+0x0240 开始是 CRT0 初始化代码 (第一条指令: `BL 0x10070248`)
+- **56 个唯一 handler 地址** (所有版本一致)
+- **默认 handler** (unused IRQs): N3GHT07T=0x100702F5, N3GHT15W=0x100702FD — 指向 CRT0 区域中的停机循环
+
+#### VT 中的 Handler 分布
+
+| IRQ 范围 | 用途 | Handler 位置 |
+|----------|------|------------|
+| 系统异常 (NMI/HF/MM/BF/UF/SVC/PendSV/SysTick) | CRT0 初始化阶段的异常捕获 | EC+0x0288-0x02FC (CRT0 代码区) |
+| IRQ0-2, 12-19, 21-23, 27-28, 33-34 | 未使用 | 默认 handler (停机循环) |
+| IRQ3-11, 20, 24-26, 29-63 | 活跃外设中断 | EC+0x1xxxx (固件主体区域) |
+| IRQ29-32 | 某种内部 handler | EC+0x01AE4-0x01B24 (靠近 VT 后方) |
+
+#### Reset Handler 的特殊性
+
+VT[1] = 0x100701F5 → EC+0x01F4（在 VT 条目 61 的位置）。这个地址在所有版本中都相同,但它**不是真正的 CPU 硬件 Reset 入口**。原因:
+1. Cortex-M 硬件复位会将 VTOR 重置为 ROM 初始值
+2. EC CRT0 在启动后才将 VTOR 设置为 0x10070100
+3. 因此 VT[1] 仅在 CRT0 执行 `SCB->VTOR = 0x10070100` 后才可能被引用
+4. 但硬件复位会再次重置 VTOR,所以 VT[1] 在正常运行中**永远不会被调用**
+5. EC+0x01F4 处存放的是 VT[61] 的值 (如 0x1008BE69),不是有效代码
+
+### 11.2 Handler 签名对比
+
+对 12 个 EC 版本的 79 个 handler 进行了字节签名 (MD5, 前 64 字节) 对比。
+
+**关键发现**: 所有 74 个 handler 在版本间都有变化,无法找到完全不变的 handler。
+
+#### Handler 变化模式
+
+1. **默认 Handler** (IRQ0-2, 12-19 等): 4 个变体
+   - N3GHT05T/07T/08M (一组)
+   - N3GHT11M/14T/15W/22W/25W/64W (一组)
+   - N3GHT12W (独立)
+   - N3GHT68W/69W (一组)
+
+2. **系统异常** (NMI/HardFault 等): 3-4 个变体,对应 CRT0 迭代
+
+3. **活跃 IRQ** (IRQ3-11, 20, 24-63): 11-12 个变体 — 几乎每个版本都不同
+
+#### 版本 Profile 分组
+
+每个版本都有唯一的 handler profile (无两个版本完全相同):
+```
+N3GHT05T  - 93aece8b1cc7
+N3GHT07T  - d25acb86c657
+N3GHT08M  - bcfbf0be4328
+N3GHT11M  - 3857db30acb2
+N3GHT12W  - 1d60113e5167
+N3GHT14T  - 5e83c3ddd83b
+N3GHT15W  - 6e17d0b97621
+N3GHT22W  - 161956883166
+N3GHT25W  - 8a814384f50c
+N3GHT64W  - 5804f5ab60bc
+N3GHT68W  - 93b02db02c07
+N3GHT69W  - 99b178c9e6b8
+```
+
+### 11.3 IRQ 用途初步推断
+
+基于 IRQ 编号和 handler 位置关系:
+- **IRQ3-11**: 最早期 (N3GHT05T) 就已存在 — 核心外设 (GPIO, Timer, UART, SPI, I2C 等)
+- **IRQ20**: 独立 handler — 可能是 WDT 或 RTC
+- **IRQ24-26**: 三个连续 IRQ — 可能是三通道 DMA 或三个 USB 端点
+- **IRQ29-32**: Handler 在 EC+0x01AE4 附近 — 靠近启动区域,可能是 flash controller
+- **IRQ35-63**: Handler 在 EC+0x19xxx 区域 — 这些 IRQ 的 handler 紧密排列,可能由某个外设 dispatcher 生成
+
+## 12. Ghidra/IDA 加载脚本
+
+为方便后续深入逆向,提供了三个工具脚本:
+
+1. **`scripts/ec_extract_blob.py`**: 从 SPI dump 提取 EC blob
+   ```
+   python3 scripts/ec_extract_blob.py firmware/ec_spi/N3GHT15W_z13_own_20260313.bin output.bin
+   ```
+
+2. **`scripts/ghidra_ec_loader.py`**: Ghidra Python 脚本
+   - 自动检测 _EC header 版本
+   - 创建 SRAM/外设内存段
+   - 标注向量表、handler 函数、已知符号
+   - 标注 ARM 系统寄存器
+
+3. **`scripts/ida_ec_loader.py`**: IDA Pro Python 脚本
+   - 功能与 Ghidra 版本相同
+
+加载参数:
+- Processor: ARM Cortex-M (Little Endian, Thumb mode)
+- Base Address: 0x10070000
+- SRAM: 0x200C0000 - 0x200C8000
+
 ---
 
 *分析脚本: `scripts/deep_ec_analysis.py`*  
 *逆向分析脚本: `scripts/reverse_ec_runtime.py`, `reverse_ec_runtime_v2.py`, `reverse_ec_mapping.py`, `reverse_ec_final.py`*  
 *Capstone 分析脚本: `scripts/ec_capstone_analysis.py`, `scripts/ec_cross_version_analysis.py`*  
 *基地址分析脚本: `scripts/ec_ldr_scan.py`, `scripts/ec_base_verify.py`, `scripts/ec_startup_disasm.py`*  
-*跨EC对比脚本: `scripts/ec_cross_base_analysis.py`*
+*跨EC对比脚本: `scripts/ec_cross_base_analysis.py`*  
+*IRQ handler 对比脚本: `scripts/ec_irq_compare.py`*  
+*Ghidra/IDA 加载脚本: `scripts/ghidra_ec_loader.py`, `scripts/ida_ec_loader.py`*  
+*EC blob 提取工具: `scripts/ec_extract_blob.py`*
