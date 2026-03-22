@@ -1,0 +1,1543 @@
+================================================================================
+ThinkPad Z13 Gen1 EC — IRQ Handler Decompilation
+Firmware: N3GHT15W  Base: 0x10070000  VT: 0x10070100
+Unique handlers: 56 / 80 vectors
+================================================================================
+
+Vector Table Summary:
+  VT#  Name                   Address
+  --------------------------------------------------
+  0    SP_Main                0x200C8000 (SP_init)
+  1    Reset_Handler          0x100701F4
+  2    NMI_Handler            0x10070290
+  3    HardFault_Handler      0x1007029C
+  4    MemManage_Handler      0x100702A8
+  5    BusFault_Handler       0x100702B4
+  6    UsageFault_Handler     0x100702C0
+  11   SVC_Handler            0x100702CC
+  12   DebugMon_Handler       0x100702D8
+  14   PendSV_Handler         0x100702E4
+  15   SysTick_Handler        0x100702F0
+  16   IRQ0_Handler           0x100702FC
+  17   IRQ1_Handler           0x100702FC
+  18   IRQ2_Handler           0x100702FC
+  19   IRQ3_Handler           0x1008B9F8
+  20   IRQ4_Handler           0x1008B998
+  21   IRQ5_Handler           0x1008B98A
+  22   IRQ6_Handler           0x1008B97C
+  23   IRQ7_Handler           0x1008BB74
+  24   IRQ8_Handler           0x1008BB58
+  25   IRQ9_Handler           0x1008BB38
+  26   IRQ10_Handler          0x1008BAD0
+  27   IRQ11_Handler          0x1008BFD0
+  28   IRQ12_Handler          0x100702FC
+  29   IRQ13_Handler          0x100702FC
+  30   IRQ14_Handler          0x100702FC
+  31   IRQ15_Handler          0x100702FC
+  32   IRQ16_Handler          0x100702FC
+  33   IRQ17_Handler          0x100702FC
+  34   IRQ18_Handler          0x100702FC
+  35   IRQ19_Handler          0x100702FC
+  36   IRQ20_Handler          0x1008BC2E
+  37   IRQ21_Handler          0x100702FC
+  38   IRQ22_Handler          0x100702FC
+  39   IRQ23_Handler          0x100702FC
+  40   IRQ24_Handler          0x1008BA58
+  41   IRQ25_Handler          0x1008BA80
+  42   IRQ26_Handler          0x1008BAA8
+  43   IRQ27_Handler          0x100702FC
+  44   IRQ28_Handler          0x100702FC
+  45   IRQ29_Handler          0x10071AEC
+  46   IRQ30_Handler          0x10071B00
+  47   IRQ31_Handler          0x10071B10
+  48   IRQ32_Handler          0x10071B24
+  49   IRQ33_Handler          0x100702FC
+  50   IRQ34_Handler          0x100702FC
+  51   IRQ35_Handler          0x1008BBD4
+  52   IRQ36_Handler          0x1008BBE6
+  53   IRQ37_Handler          0x1008BBF8
+  54   IRQ38_Handler          0x1008BC0A
+  55   IRQ39_Handler          0x1008BC1C
+  56   IRQ40_Handler          0x1008BC40
+  57   IRQ41_Handler          0x1008BCAC
+  58   IRQ42_Handler          0x1008BD24
+  59   IRQ43_Handler          0x1008BDA0
+  60   IRQ44_Handler          0x1008BE18
+  61   IRQ45_Handler          0x1008BE68
+  62   IRQ46_Handler          0x1008BEE0
+  63   IRQ47_Handler          0x1008BF58
+  64   IRQ48_Handler          0x1008BC64
+  65   IRQ49_Handler          0x1008BCD4
+  66   IRQ50_Handler          0x1008BD4C
+  67   IRQ51_Handler          0x1008BDC8
+  68   IRQ52_Handler          0x100702FC
+  69   IRQ53_Handler          0x1008BE90
+  70   IRQ54_Handler          0x1008BF08
+  71   IRQ55_Handler          0x1008BF80
+  72   IRQ56_Handler          0x1008BE40
+  73   IRQ57_Handler          0x1008BEB8
+  74   IRQ58_Handler          0x1008BF30
+  75   IRQ59_Handler          0x1008BFA8
+  76   IRQ60_Handler          0x1008BC88
+  77   IRQ61_Handler          0x1008BCFC
+  78   IRQ62_Handler          0x1008BD78
+  79   IRQ63_Handler          0x1008BDF0
+
+
+──────────────────────────────────────────────────────────────────────
+// Reset_Handler @ 0x100701F4
+──────────────────────────────────────────────────────────────────────
+
+undefined4 Reset_Handler(undefined4 param_1,int param_2)
+
+{
+  undefined4 *puVar1;
+  
+  software_bkpt(0x69);
+  software_bkpt(0xe1);
+  if (param_2 >> 0x20 < 0) {
+    puVar1 = (undefined4 *)&stack0x00000014;
+  }
+  else {
+    puVar1 = (undefined4 *)&stack0x00000010;
+  }
+  return *puVar1;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// NMI_Handler @ 0x10070290
+──────────────────────────────────────────────────────────────────────
+
+void NMI_Handler(byte *param_1,byte *param_2,byte *param_3,uint param_4)
+
+{
+  byte *pbVar1;
+  byte *pbVar2;
+  uint unaff_r4;
+  byte *pbVar3;
+  uint uVar4;
+  int iVar5;
+  byte in_r12;
+  
+  while( true ) {
+    uVar4 = (int)param_4 >> 4;
+    pbVar1 = param_1;
+    if (uVar4 == 0) {
+      pbVar1 = param_1 + 1;
+      uVar4 = (uint)*param_1;
+    }
+    while (unaff_r4 = unaff_r4 - 1, unaff_r4 != 0) {
+      *param_2 = *pbVar1;
+      pbVar1 = pbVar1 + 1;
+      param_2 = param_2 + 1;
+    }
+    if ((param_4 & 8) == 0) {
+      while (uVar4 = uVar4 - 1, -1 < (int)uVar4) {
+        *param_2 = in_r12;
+        param_2 = param_2 + 1;
+      }
+    }
+    else {
+      pbVar2 = pbVar1 + 1;
+      iVar5 = uVar4 + 2;
+      pbVar3 = param_2 + -(uint)*pbVar1;
+      while (iVar5 = iVar5 + -1, pbVar1 = pbVar2, -1 < iVar5) {
+        *param_2 = *pbVar3;
+        param_2 = param_2 + 1;
+        pbVar3 = pbVar3 + 1;
+      }
+    }
+    if (param_3 <= param_2) break;
+    param_4 = (uint)*pbVar1;
+    unaff_r4 = param_4 & 7;
+    param_1 = pbVar1 + 1;
+    if ((*pbVar1 & 7) == 0) {
+      param_1 = pbVar1 + 2;
+      unaff_r4 = (uint)pbVar1[1];
+    }
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// HardFault_Handler @ 0x1007029C
+──────────────────────────────────────────────────────────────────────
+
+void HardFault_Handler(byte *param_1,byte *param_2,byte *param_3,uint param_4)
+
+{
+  byte *pbVar1;
+  byte *pbVar2;
+  uint uVar3;
+  int unaff_r4;
+  uint unaff_r5;
+  int iVar4;
+  byte in_r12;
+  
+  do {
+    do {
+      pbVar1 = param_1 + 1;
+      unaff_r4 = unaff_r4 + -1;
+      pbVar2 = param_2 + 1;
+      *param_2 = *param_1;
+      param_1 = pbVar1;
+      param_2 = pbVar2;
+    } while (unaff_r4 != 0);
+    do {
+      if ((param_4 & 8) == 0) {
+        while (unaff_r5 = unaff_r5 - 1, -1 < (int)unaff_r5) {
+          *param_2 = in_r12;
+          param_2 = param_2 + 1;
+        }
+      }
+      else {
+        pbVar2 = param_1 + 1;
+        iVar4 = unaff_r5 + 2;
+        pbVar1 = param_2 + -(uint)*param_1;
+        while (iVar4 = iVar4 + -1, param_1 = pbVar2, -1 < iVar4) {
+          *param_2 = *pbVar1;
+          param_2 = param_2 + 1;
+          pbVar1 = pbVar1 + 1;
+        }
+      }
+      if (param_3 <= param_2) {
+        return;
+      }
+      param_4 = (uint)*param_1;
+      uVar3 = param_4 & 7;
+      pbVar1 = param_1 + 1;
+      if ((*param_1 & 7) == 0) {
+        pbVar1 = param_1 + 2;
+        uVar3 = (uint)param_1[1];
+      }
+      unaff_r5 = (int)param_4 >> 4;
+      param_1 = pbVar1;
+      if (unaff_r5 == 0) {
+        param_1 = pbVar1 + 1;
+        unaff_r5 = (uint)*pbVar1;
+      }
+      unaff_r4 = uVar3 - 1;
+    } while (unaff_r4 == 0);
+  } while( true );
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// MemManage_Handler @ 0x100702A8
+──────────────────────────────────────────────────────────────────────
+
+void MemManage_Handler(byte *param_1,byte *param_2,byte *param_3,uint param_4)
+
+{
+  byte *pbVar1;
+  byte *pbVar2;
+  uint uVar3;
+  uint unaff_r5;
+  int iVar4;
+  byte in_r12;
+  
+  while( true ) {
+    if ((param_4 & 8) == 0) {
+      while (unaff_r5 = unaff_r5 - 1, -1 < (int)unaff_r5) {
+        *param_2 = in_r12;
+        param_2 = param_2 + 1;
+      }
+    }
+    else {
+      pbVar2 = param_1 + 1;
+      iVar4 = unaff_r5 + 2;
+      pbVar1 = param_2 + -(uint)*param_1;
+      while (iVar4 = iVar4 + -1, param_1 = pbVar2, -1 < iVar4) {
+        *param_2 = *pbVar1;
+        param_2 = param_2 + 1;
+        pbVar1 = pbVar1 + 1;
+      }
+    }
+    if (param_3 <= param_2) break;
+    param_4 = (uint)*param_1;
+    uVar3 = param_4 & 7;
+    pbVar1 = param_1 + 1;
+    if ((*param_1 & 7) == 0) {
+      pbVar1 = param_1 + 2;
+      uVar3 = (uint)param_1[1];
+    }
+    unaff_r5 = (int)param_4 >> 4;
+    param_1 = pbVar1;
+    if (unaff_r5 == 0) {
+      param_1 = pbVar1 + 1;
+      unaff_r5 = (uint)*pbVar1;
+    }
+    while (uVar3 = uVar3 - 1, uVar3 != 0) {
+      *param_2 = *param_1;
+      param_1 = param_1 + 1;
+      param_2 = param_2 + 1;
+    }
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// BusFault_Handler @ 0x100702B4
+──────────────────────────────────────────────────────────────────────
+
+void BusFault_Handler(byte *param_1,byte *param_2,byte *param_3)
+
+{
+  byte bVar1;
+  byte *pbVar2;
+  byte *pbVar3;
+  uint uVar4;
+  uint unaff_r4;
+  uint unaff_r5;
+  byte in_r12;
+  char in_ZR;
+  
+  while( true ) {
+    if (in_ZR == '\0') {
+      pbVar2 = param_2 + -unaff_r4;
+      while (unaff_r5 = unaff_r5 - 1, -1 < (int)unaff_r5) {
+        *param_2 = *pbVar2;
+        param_2 = param_2 + 1;
+        pbVar2 = pbVar2 + 1;
+      }
+    }
+    else {
+      while (unaff_r5 = unaff_r5 - 1, -1 < (int)unaff_r5) {
+        *param_2 = in_r12;
+        param_2 = param_2 + 1;
+      }
+    }
+    if (param_3 <= param_2) break;
+    bVar1 = *param_1;
+    uVar4 = bVar1 & 7;
+    pbVar2 = param_1 + 1;
+    if ((bVar1 & 7) == 0) {
+      pbVar2 = param_1 + 2;
+      uVar4 = (uint)param_1[1];
+    }
+    unaff_r5 = (int)(uint)bVar1 >> 4;
+    pbVar3 = pbVar2;
+    if (unaff_r5 == 0) {
+      pbVar3 = pbVar2 + 1;
+      unaff_r5 = (uint)*pbVar2;
+    }
+    while (uVar4 = uVar4 - 1, uVar4 != 0) {
+      *param_2 = *pbVar3;
+      pbVar3 = pbVar3 + 1;
+      param_2 = param_2 + 1;
+    }
+    in_ZR = (bVar1 & 8) == 0;
+    unaff_r4 = 0;
+    param_1 = pbVar3;
+    if (!(bool)in_ZR) {
+      param_1 = pbVar3 + 1;
+      unaff_r4 = (uint)*pbVar3;
+      unaff_r5 = unaff_r5 + 2;
+    }
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// UsageFault_Handler @ 0x100702C0
+──────────────────────────────────────────────────────────────────────
+
+void UsageFault_Handler(byte *param_1,byte *param_2,byte *param_3)
+
+{
+  byte bVar1;
+  byte *pbVar2;
+  byte *pbVar3;
+  uint uVar4;
+  int iVar5;
+  uint unaff_r5;
+  byte in_r12;
+  char in_NG;
+  
+  do {
+    if (in_NG != '\0') {
+      while( true ) {
+        if (param_3 <= param_2) {
+          return;
+        }
+        bVar1 = *param_1;
+        uVar4 = bVar1 & 7;
+        pbVar2 = param_1 + 1;
+        if ((bVar1 & 7) == 0) {
+          pbVar2 = param_1 + 2;
+          uVar4 = (uint)param_1[1];
+        }
+        unaff_r5 = (int)(uint)bVar1 >> 4;
+        param_1 = pbVar2;
+        if (unaff_r5 == 0) {
+          param_1 = pbVar2 + 1;
+          unaff_r5 = (uint)*pbVar2;
+        }
+        while (uVar4 = uVar4 - 1, uVar4 != 0) {
+          *param_2 = *param_1;
+          param_1 = param_1 + 1;
+          param_2 = param_2 + 1;
+        }
+        if ((bVar1 & 8) == 0) break;
+        pbVar3 = param_1 + 1;
+        iVar5 = unaff_r5 + 2;
+        pbVar2 = param_2 + -(uint)*param_1;
+        while (iVar5 = iVar5 + -1, param_1 = pbVar3, -1 < iVar5) {
+          *param_2 = *pbVar2;
+          param_2 = param_2 + 1;
+          pbVar2 = pbVar2 + 1;
+        }
+      }
+    }
+    unaff_r5 = unaff_r5 - 1;
+    in_NG = (int)unaff_r5 < 0;
+    if (!(bool)in_NG) {
+      *param_2 = in_r12;
+      param_2 = param_2 + 1;
+    }
+  } while( true );
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// SVC_Handler @ 0x100702CC
+──────────────────────────────────────────────────────────────────────
+
+void SVC_Handler(byte *param_1,byte *param_2,byte *param_3)
+
+{
+  byte bVar1;
+  byte *pbVar2;
+  byte *pbVar3;
+  uint uVar4;
+  byte *unaff_r4;
+  uint uVar5;
+  int unaff_r5;
+  byte in_r12;
+  
+  do {
+    while (unaff_r5 = unaff_r5 + -1, pbVar3 = param_1, -1 < unaff_r5) {
+      *param_2 = *unaff_r4;
+      param_2 = param_2 + 1;
+      unaff_r4 = unaff_r4 + 1;
+    }
+    while( true ) {
+      if (param_3 <= param_2) {
+        return;
+      }
+      bVar1 = *pbVar3;
+      uVar4 = bVar1 & 7;
+      pbVar2 = pbVar3 + 1;
+      if ((bVar1 & 7) == 0) {
+        pbVar2 = pbVar3 + 2;
+        uVar4 = (uint)pbVar3[1];
+      }
+      uVar5 = (int)(uint)bVar1 >> 4;
+      pbVar3 = pbVar2;
+      if (uVar5 == 0) {
+        pbVar3 = pbVar2 + 1;
+        uVar5 = (uint)*pbVar2;
+      }
+      while (uVar4 = uVar4 - 1, uVar4 != 0) {
+        *param_2 = *pbVar3;
+        pbVar3 = pbVar3 + 1;
+        param_2 = param_2 + 1;
+      }
+      if ((bVar1 & 8) != 0) break;
+      while (uVar5 = uVar5 - 1, -1 < (int)uVar5) {
+        *param_2 = in_r12;
+        param_2 = param_2 + 1;
+      }
+    }
+    param_1 = pbVar3 + 1;
+    unaff_r5 = uVar5 + 2;
+    unaff_r4 = param_2 + -(uint)*pbVar3;
+  } while( true );
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// DebugMon_Handler @ 0x100702D8
+──────────────────────────────────────────────────────────────────────
+
+void DebugMon_Handler(undefined4 param_1,undefined4 *param_2,uint param_3)
+
+{
+  bool bVar1;
+  
+  do {
+    bVar1 = 0xf < param_3;
+    param_3 = param_3 - 0x10;
+    if (bVar1) {
+      *param_2 = 0;
+      param_2[1] = 0;
+      param_2[2] = 0;
+      param_2[3] = 0;
+      param_2 = param_2 + 4;
+    }
+  } while (bVar1 && param_3 != 0);
+  if ((param_3 & 8) != 0) {
+    *param_2 = 0;
+    param_2[1] = 0;
+    param_2 = param_2 + 2;
+  }
+  *param_2 = 0;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// PendSV_Handler @ 0x100702E4
+──────────────────────────────────────────────────────────────────────
+
+void PendSV_Handler(undefined4 param_1,undefined4 *param_2,uint param_3,undefined4 param_4)
+
+{
+  undefined4 unaff_r4;
+  undefined4 unaff_r5;
+  undefined4 unaff_r6;
+  undefined1 in_ZR;
+  undefined1 in_CY;
+  
+  while( true ) {
+    if ((bool)in_CY != false) {
+      *param_2 = param_4;
+      param_2[1] = unaff_r4;
+      param_2[2] = unaff_r5;
+      param_2[3] = unaff_r6;
+      param_2 = param_2 + 4;
+    }
+    if (!(bool)in_CY || (bool)in_ZR) break;
+    in_CY = 0xf < param_3;
+    param_3 = param_3 - 0x10;
+    in_ZR = param_3 == 0;
+  }
+  if ((param_3 & 8) != 0) {
+    *param_2 = unaff_r4;
+    param_2[1] = unaff_r5;
+    param_2 = param_2 + 2;
+  }
+  *param_2 = param_4;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// SysTick_Handler @ 0x100702F0
+──────────────────────────────────────────────────────────────────────
+
+void SysTick_Handler(undefined4 param_1,undefined4 *param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  *param_2 = param_4;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ0_Handler @ 0x100702FC  (also: IRQ1_Handler, IRQ2_Handler, IRQ12_Handler, IRQ13_Handler, IRQ14_Handler, IRQ15_Handler, IRQ16_Handler, IRQ17_Handler, IRQ18_Handler, IRQ19_Handler, IRQ21_Handler, IRQ22_Handler, IRQ23_Handler, IRQ27_Handler, IRQ28_Handler, IRQ33_Handler, IRQ34_Handler, IRQ52_Handler)
+──────────────────────────────────────────────────────────────────────
+
+void IRQ52_Handler(void)
+
+{
+  int iVar1;
+  int iVar2;
+  int *in_r3;
+  int iVar3;
+  int *piVar4;
+  undefined4 *puVar5;
+  int *piVar6;
+  int *piVar7;
+  
+  if (*in_r3 != DAT_10070434) {
+    iVar1 = 0;
+    puVar5 = DAT_1007043c;
+    piVar7 = DAT_10070438;
+    do {
+      piVar4 = (int *)*puVar5;
+      piVar6 = puVar5 + 1;
+      if (piVar4 == (int *)0xffffffff) goto LAB_10070344;
+      iVar3 = 0;
+      puVar5 = puVar5 + 2;
+      do {
+        iVar2 = *piVar4;
+        piVar4 = piVar4 + 1;
+        iVar3 = iVar3 + iVar2;
+      } while ((int)piVar4 < *piVar6);
+      iVar2 = *piVar7;
+      piVar7 = piVar7 + 1;
+    } while (iVar2 + iVar3 == 0);
+    iVar1 = -1;
+LAB_10070344:
+    if (iVar1 != 0) {
+      do {
+                    /* WARNING: Do nothing block with infinite loop */
+      } while( true );
+    }
+    *DAT_10070430 = DAT_10070434;
+  }
+  disableIRQinterrupts();
+                    /* WARNING: Could not recover jumptable at 0x1007035a. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (*DAT_10070444)();
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ29_Handler @ 0x10071AEC
+──────────────────────────────────────────────────────────────────────
+// No function at this address
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ30_Handler @ 0x10071B00
+──────────────────────────────────────────────────────────────────────
+// No function at this address
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ31_Handler @ 0x10071B10
+──────────────────────────────────────────────────────────────────────
+
+void IRQ31_Handler(int param_1,int param_2,int param_3,int *param_4)
+
+{
+  uint uVar1;
+  int iVar2;
+  undefined1 unaff_r4;
+  int unaff_r5;
+  undefined1 unaff_r7;
+  int unaff_r8;
+  byte *unaff_r9;
+  byte in_r12;
+  
+  for (; param_2 < param_1; param_2 = param_2 + 1) {
+    if (*param_4 == 0) {
+      *(undefined1 *)(unaff_r8 + param_2) = unaff_r7;
+    }
+    else if (param_3 == 0x7f) {
+      *(char *)(unaff_r5 + 1) = (char)param_2;
+      param_3 = param_2;
+    }
+    else {
+      *(char *)(unaff_r8 + param_3) = (char)param_2 - (char)param_3;
+      param_3 = param_2;
+    }
+    param_4 = param_4 + 1;
+  }
+  if (param_3 == 0x7f) {
+    *(undefined1 *)(unaff_r5 + 2) = unaff_r4;
+    *(undefined1 *)(unaff_r5 + 1) = unaff_r4;
+  }
+  else {
+    *(char *)(unaff_r5 + 2) = (char)param_3;
+    *(undefined1 *)(unaff_r8 + param_3) = unaff_r4;
+  }
+  disableIRQinterrupts();
+  *unaff_r9 = in_r12 & 0xfd;
+  enableIRQinterrupts();
+  uVar1 = 0;
+  iVar2 = DAT_10071b6c + 0x6c;
+  do {
+    *(undefined4 *)(iVar2 + uVar1 * 4) = 0;
+    uVar1 = uVar1 + 1;
+  } while (uVar1 < 4);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ32_Handler @ 0x10071B24
+──────────────────────────────────────────────────────────────────────
+
+void IRQ32_Handler(int param_1,int param_2,undefined4 param_3,int *param_4)
+
+{
+  uint uVar1;
+  int iVar2;
+  undefined1 unaff_r4;
+  int unaff_r5;
+  undefined1 unaff_r7;
+  int unaff_r8;
+  byte *unaff_r9;
+  byte in_r12;
+  
+  do {
+    *(char *)(unaff_r5 + 1) = (char)param_2;
+    iVar2 = param_2;
+    while( true ) {
+      while( true ) {
+        param_2 = param_2 + 1;
+        param_4 = param_4 + 1;
+        if (param_1 <= param_2) {
+          if (iVar2 == 0x7f) {
+            *(undefined1 *)(unaff_r5 + 2) = unaff_r4;
+            *(undefined1 *)(unaff_r5 + 1) = unaff_r4;
+          }
+          else {
+            *(char *)(unaff_r5 + 2) = (char)iVar2;
+            *(undefined1 *)(unaff_r8 + iVar2) = unaff_r4;
+          }
+          disableIRQinterrupts();
+          *unaff_r9 = in_r12 & 0xfd;
+          enableIRQinterrupts();
+          uVar1 = 0;
+          iVar2 = DAT_10071b6c + 0x6c;
+          do {
+            *(undefined4 *)(iVar2 + uVar1 * 4) = 0;
+            uVar1 = uVar1 + 1;
+          } while (uVar1 < 4);
+          return;
+        }
+        if (*param_4 != 0) break;
+        *(undefined1 *)(unaff_r8 + param_2) = unaff_r7;
+      }
+      if (iVar2 == 0x7f) break;
+      *(char *)(unaff_r8 + iVar2) = (char)param_2 - (char)iVar2;
+      iVar2 = param_2;
+    }
+  } while( true );
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ6_Handler @ 0x1008B97C
+──────────────────────────────────────────────────────────────────────
+
+void IRQ6_Handler(void)
+
+{
+  byte *pbVar1;
+  
+  FUN_1008784c();
+  FUN_1008784c(DAT_1008b9a4);
+  FUN_1008784c(DAT_1008b9a8);
+  *DAT_1008b9ac = *DAT_1008b9ac & 0xf7;
+  pbVar1 = DAT_1008b9ac;
+  pbVar1[4] = 0;
+  pbVar1[5] = 0;
+  pbVar1[6] = 0;
+  pbVar1[7] = 0;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ5_Handler @ 0x1008B98A
+──────────────────────────────────────────────────────────────────────
+
+void IRQ5_Handler(byte *param_1)
+
+{
+  undefined8 in_d0;
+  undefined8 in_d7;
+  
+  VectorSub(in_d0,in_d7,4);
+  *param_1 = *param_1 & 0xf7;
+  *(undefined4 *)(DAT_1008b9ac + 4) = 0;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ4_Handler @ 0x1008B998
+──────────────────────────────────────────────────────────────────────
+
+void IRQ4_Handler(undefined4 param_1,int param_2)
+
+{
+  *(undefined4 *)(param_2 + 4) = 0;
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ3_Handler @ 0x1008B9F8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ3_Handler(int param_1,undefined4 param_2,byte *param_3)
+
+{
+  byte bVar1;
+  
+  bVar1 = *param_3;
+  if (param_1 == 1) {
+    if ((int)((uint)bVar1 * 0x8000000) < 0) {
+      return;
+    }
+    bVar1 = bVar1 | 0x10;
+  }
+  else {
+    if (-1 < (int)((uint)bVar1 * 0x8000000)) {
+      return;
+    }
+    bVar1 = bVar1 & 0xef;
+  }
+  *param_3 = bVar1;
+  FUN_100720d4(0x2e);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ24_Handler @ 0x1008BA58
+──────────────────────────────────────────────────────────────────────
+
+void IRQ24_Handler(void)
+
+{
+  FUN_10087ab4(DAT_1008ba70);
+  FUN_10087ab4(DAT_1008ba74);
+  FUN_10087ab4(DAT_1008ba78);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ25_Handler @ 0x1008BA80
+──────────────────────────────────────────────────────────────────────
+
+/* WARNING: Control flow encountered bad instruction data */
+
+void IRQ25_Handler(void)
+
+{
+                    /* WARNING: Bad instruction - Truncating control flow here */
+  halt_baddata();
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ26_Handler @ 0x1008BAA8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ26_Handler(void)
+
+{
+  int iVar1;
+  undefined4 in_stack_00000000;
+  
+  FUN_10085da4();
+  if (((DAT_1008baec[0xc] & 1) != 0) && ((int)((uint)*DAT_1008baec << 0x1e) < 0)) {
+    FUN_10085dca();
+  }
+  if (((DAT_1008baf0[0xc] & 1) != 0) && ((int)((uint)*DAT_1008baf0 << 0x1e) < 0)) {
+    FUN_10085df0();
+  }
+  if (((DAT_1008baf4[0xc] & 1) != 0) && ((int)((uint)*DAT_1008baf4 << 0x1e) < 0)) {
+    FUN_10081bb4();
+    if ((code *)*DAT_10085e70 != (code *)0x0) {
+      iVar1 = (*(code *)*DAT_10085e70)
+                        (((uint)*DAT_10085e6c << 0x1c) >> 0x1f,DAT_10085e6c[4],0,0,0,
+                         in_stack_00000000);
+      if (iVar1 == 0) {
+        FUN_10081bb4();
+        return;
+      }
+    }
+    FUN_10081bf4();
+    return;
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ10_Handler @ 0x1008BAD0
+──────────────────────────────────────────────────────────────────────
+
+void IRQ10_Handler(void)
+
+{
+  int iVar1;
+  undefined4 in_stack_00000000;
+  
+  if (((DAT_1008baf4[0xc] & 1) != 0) && ((int)((uint)*DAT_1008baf4 << 0x1e) < 0)) {
+    FUN_10081bb4();
+    if ((code *)*DAT_10085e70 != (code *)0x0) {
+      iVar1 = (*(code *)*DAT_10085e70)
+                        (((uint)*DAT_10085e6c << 0x1c) >> 0x1f,DAT_10085e6c[4],0,0,0,
+                         in_stack_00000000);
+      if (iVar1 == 0) {
+        FUN_10081bb4();
+        return;
+      }
+    }
+    FUN_10081bf4();
+    return;
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ9_Handler @ 0x1008BB38
+──────────────────────────────────────────────────────────────────────
+
+void IRQ9_Handler(byte *param_1)
+
+{
+  if ((*param_1 & 1) != 0) {
+    return;
+  }
+  FUN_10081bd4();
+  if (*(code **)(DAT_10085e8c + 4) != (code *)0x0) {
+                    /* WARNING: Could not recover jumptable at 0x10085e86. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+    (**(code **)(DAT_10085e8c + 4))();
+    return;
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ8_Handler @ 0x1008BB58
+──────────────────────────────────────────────────────────────────────
+
+void IRQ8_Handler(void)
+
+{
+  FUN_10082720(0x18);
+  FUN_10098500(0);
+  *(byte *)(DAT_1008bb7c + 0x10) = *(byte *)(DAT_1008bb7c + 0x10) | *(byte *)(DAT_1008bb7c + 0xe);
+  FUN_10082740(0x18);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ7_Handler @ 0x1008BB74
+──────────────────────────────────────────────────────────────────────
+
+void IRQ7_Handler(void)
+
+{
+  FUN_10082740(0x18);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ35_Handler @ 0x1008BBD4
+──────────────────────────────────────────────────────────────────────
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void IRQ35_Handler(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  ushort param_5)
+
+{
+  undefined4 *puVar1;
+  code *pcVar2;
+  undefined4 extraout_r1;
+  undefined4 extraout_r2;
+  int unaff_r5;
+  
+  puVar1 = IRQ20_Handler;
+  while ((int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19) < 0) {
+    param_5 = *(ushort *)(unaff_r5 + 0x40) & 0x800;
+    if ((uint)(*(ushort *)(unaff_r5 + 0x40) & 0x800) == unaff_r5 >> 0x13) {
+      pcVar2 = (code *)puVar1[1];
+    }
+    else {
+      pcVar2 = (code *)*puVar1;
+    }
+    if (pcVar2 == (code *)0x0) {
+      *(byte *)(unaff_r5 + 0x44) = *(byte *)(unaff_r5 + 0x44) | 4;
+    }
+    else {
+      (*pcVar2)();
+      param_2 = extraout_r1;
+      param_3 = extraout_r2;
+    }
+  }
+  if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) {
+    *(undefined1 *)(unaff_r5 + 0x42) = 0x20;
+  }
+  FUN_10082700(10,param_2,param_3,param_5);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ36_Handler @ 0x1008BBE6
+──────────────────────────────────────────────────────────────────────
+
+void IRQ36_Handler(ushort param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  uint param_5)
+
+{
+  code *pcVar1;
+  undefined4 extraout_r1;
+  undefined4 extraout_r2;
+  undefined4 *unaff_r4;
+  int unaff_r5;
+  uint unaff_r6;
+  
+  while( true ) {
+    param_5 = CONCAT22(param_5._2_2_,param_1) & 0xffff0800;
+    if ((param_1 & 0x800) == unaff_r6) {
+      pcVar1 = (code *)unaff_r4[1];
+    }
+    else {
+      pcVar1 = (code *)*unaff_r4;
+    }
+    if (pcVar1 == (code *)0x0) {
+      *(byte *)(unaff_r5 + 0x44) = *(byte *)(unaff_r5 + 0x44) | 4;
+    }
+    else {
+      (*pcVar1)();
+      param_2 = extraout_r1;
+      param_3 = extraout_r2;
+    }
+    if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) break;
+    param_1 = *(ushort *)(unaff_r5 + 0x40);
+    param_5 = CONCAT22(param_5._2_2_,param_1);
+  }
+  if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) {
+    *(undefined1 *)(unaff_r5 + 0x42) = 0x20;
+  }
+  FUN_10082700(10,param_2,param_3,param_5);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ37_Handler @ 0x1008BBF8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ37_Handler(code *param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  ushort param_5)
+
+{
+  undefined4 extraout_r1;
+  undefined4 extraout_r2;
+  undefined4 *unaff_r4;
+  int unaff_r5;
+  uint unaff_r6;
+  
+  while( true ) {
+    if (param_1 == (code *)0x0) {
+      *(byte *)(unaff_r5 + 0x44) = *(byte *)(unaff_r5 + 0x44) | 4;
+    }
+    else {
+      (*param_1)();
+      param_2 = extraout_r1;
+      param_3 = extraout_r2;
+    }
+    if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) break;
+    param_5 = *(ushort *)(unaff_r5 + 0x40) & 0x800;
+    if ((*(ushort *)(unaff_r5 + 0x40) & 0x800) == unaff_r6) {
+      param_1 = (code *)unaff_r4[1];
+    }
+    else {
+      param_1 = (code *)*unaff_r4;
+    }
+  }
+  if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) {
+    *(undefined1 *)(unaff_r5 + 0x42) = 0x20;
+  }
+  FUN_10082700(10,param_2,param_3,param_5);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ38_Handler @ 0x1008BC0A
+──────────────────────────────────────────────────────────────────────
+
+void IRQ38_Handler(byte param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  ushort param_5)
+
+{
+  code *pcVar1;
+  undefined4 extraout_r1;
+  undefined4 extraout_r2;
+  undefined4 *unaff_r4;
+  int unaff_r5;
+  uint unaff_r6;
+  
+  do {
+    *(byte *)(unaff_r5 + 0x44) = param_1;
+    while( true ) {
+      if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) {
+        if (-1 < (int)((uint)*(byte *)(unaff_r5 + 0x42) << 0x19)) {
+          *(undefined1 *)(unaff_r5 + 0x42) = 0x20;
+        }
+        FUN_10082700(10,param_2,param_3,param_5);
+        return;
+      }
+      param_5 = *(ushort *)(unaff_r5 + 0x40) & 0x800;
+      if ((*(ushort *)(unaff_r5 + 0x40) & 0x800) == unaff_r6) {
+        pcVar1 = (code *)unaff_r4[1];
+      }
+      else {
+        pcVar1 = (code *)*unaff_r4;
+      }
+      if (pcVar1 == (code *)0x0) break;
+      (*pcVar1)();
+      param_2 = extraout_r1;
+      param_3 = extraout_r2;
+    }
+    param_1 = *(byte *)(unaff_r5 + 0x44) | 4;
+  } while( true );
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ39_Handler @ 0x1008BC1C
+──────────────────────────────────────────────────────────────────────
+
+void IRQ39_Handler(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  undefined4 param_5)
+
+{
+  int unaff_r5;
+  char in_NG;
+  
+  if (in_NG == '\0') {
+    *(undefined1 *)(unaff_r5 + 0x42) = 0x20;
+  }
+  FUN_10082700(10,param_2,param_3,param_5);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ20_Handler @ 0x1008BC2E
+──────────────────────────────────────────────────────────────────────
+
+void IRQ20_Handler(void)
+
+{
+  *DAT_1008bc50 = 2;
+  *DAT_1008bc54 = *DAT_1008bc54 | 2;
+  FUN_100720d4(0x53);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ40_Handler @ 0x1008BC40
+──────────────────────────────────────────────────────────────────────
+
+void IRQ40_Handler(byte *param_1)
+
+{
+  *param_1 = *param_1 | 2;
+  FUN_100720d4(0x53);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ48_Handler @ 0x1008BC64
+──────────────────────────────────────────────────────────────────────
+
+void IRQ48_Handler(int param_1)
+
+{
+  byte bVar1;
+  byte bVar2;
+  undefined1 *puVar3;
+  int iVar4;
+  int iVar5;
+  
+  FUN_10082720(8);
+  iVar4 = DAT_10083888;
+  puVar3 = DAT_10083884;
+  bVar1 = DAT_10083884[2];
+  bVar2 = DAT_10083884[6];
+  if (param_1 - 2U < 2) {
+    iVar5 = DAT_1008388c + param_1;
+    if (*(char *)(DAT_10083888 + 1) == '\x01') {
+      if ((int)((uint)bVar1 << 0x1e) < 0) {
+        DAT_10083884[6] = DAT_10083884[6] & 0xcf;
+        puVar3[4] = puVar3[4] & 0xfd;
+        puVar3[6] = bVar2 & ~*(byte *)(iVar5 + -1);
+        puVar3[10] = puVar3[10] & 0xfd;
+        FUN_1008da80(param_1,0);
+        *(undefined1 *)(iVar4 + 1) = 0;
+        goto LAB_10083878;
+      }
+    }
+    else if ((int)((uint)bVar1 << 0x1e) < 0) {
+      bVar2 = DAT_10083884[6];
+      DAT_10083884[6] = DAT_10083884[6] & 0xcf;
+      puVar3[6] = bVar2 & ~*(byte *)(iVar5 + -1);
+      puVar3[10] = puVar3[10] & 0xfd;
+      FUN_1008da4c(param_1,*puVar3,(bVar1 & 0x44) != 0);
+      goto LAB_10083878;
+    }
+    if ((bVar1 & 1) != 0) {
+      DAT_10083884[10] = DAT_10083884[10] & 0xfe;
+    }
+  }
+LAB_10083878:
+  FUN_10082740(8);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ60_Handler @ 0x1008BC88
+──────────────────────────────────────────────────────────────────────
+
+void IRQ60_Handler(void)
+
+{
+  int iVar1;
+  undefined1 *puVar2;
+  char *unaff_r4;
+  
+  if (*unaff_r4 != '\0') {
+    FUN_10086050();
+  }
+  if (((int)((uint)(byte)unaff_r4[0x71] << 0x1d) < 0) &&
+     (((int)((uint)(byte)unaff_r4[0x70] << 0x19) < 0 || (unaff_r4[1] != '\0')))) {
+    thunk_FUN_1009e1f0();
+  }
+  puVar2 = DAT_1008bcd0;
+  iVar1 = DAT_1008bccc;
+  if ((int)((uint)*(byte *)(DAT_1008bccc + 0x48) << 0x18) < 0) {
+    FUN_10099b80(*DAT_1008bcd0);
+    *puVar2 = 0;
+    *(undefined1 *)(iVar1 + 0x48) = 0x80;
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ41_Handler @ 0x1008BCAC
+──────────────────────────────────────────────────────────────────────
+
+void IRQ41_Handler(undefined4 param_1,int param_2)
+
+{
+  undefined1 *puVar1;
+  int unaff_r5;
+  
+  puVar1 = DAT_1008bcd0;
+  if (param_2 << 0x19 < 0) {
+    FUN_10099b80(*DAT_1008bcd0);
+    *puVar1 = 0;
+    *(undefined1 *)(unaff_r5 + 0x48) = 0x80;
+  }
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ49_Handler @ 0x1008BCD4
+──────────────────────────────────────────────────────────────────────
+
+void IRQ49_Handler(void)
+
+{
+  FUN_10086ad4(0);
+  FUN_10082700(0x23);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ61_Handler @ 0x1008BCFC
+──────────────────────────────────────────────────────────────────────
+
+void IRQ61_Handler(void)
+
+{
+  FUN_10086ad4();
+  FUN_10082700(0x25);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ42_Handler @ 0x1008BD24
+──────────────────────────────────────────────────────────────────────
+
+void IRQ42_Handler(void)
+
+{
+  FUN_10082700(0x27);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ50_Handler @ 0x1008BD4C
+──────────────────────────────────────────────────────────────────────
+
+void IRQ50_Handler(undefined4 param_1)
+
+{
+  FUN_10086fb8(param_1,DAT_1008bd60);
+  FUN_10082700(0x28);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ62_Handler @ 0x1008BD78
+──────────────────────────────────────────────────────────────────────
+
+void IRQ62_Handler(void)
+
+{
+  FUN_10082700(0x30);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ43_Handler @ 0x1008BDA0
+──────────────────────────────────────────────────────────────────────
+
+void IRQ43_Handler(void)
+
+{
+  FUN_10082700();
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ51_Handler @ 0x1008BDC8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ51_Handler(void)
+
+{
+  byte *pbVar1;
+  byte bVar2;
+  int in_stack_00000004;
+  
+  pbVar1 = (byte *)(DAT_1008bdf4 + 0xe);
+  bVar2 = *(byte *)(DAT_1008bdf4 + 0x20) & *pbVar1;
+  *(byte *)(DAT_1008bdf4 + 0x10) = bVar2;
+  FUN_10086fb8(bVar2,DAT_1008bdf8,*pbVar1,in_stack_00000004 >> 0x20);
+  FUN_10082700(0x31);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ63_Handler @ 0x1008BDF0
+──────────────────────────────────────────────────────────────────────
+// No function at this address
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ44_Handler @ 0x1008BE18
+──────────────────────────────────────────────────────────────────────
+
+void IRQ44_Handler(void)
+
+{
+  byte *pbVar1;
+  byte bVar2;
+  int in_stack_00000004;
+  int in_stack_00000008;
+  int iStack0000000c;
+  
+  iStack0000000c = in_stack_00000008 << 7;
+  pbVar1 = (byte *)(DAT_1008be44 + 0x12);
+  bVar2 = *(byte *)(DAT_1008be44 + 0x22) & *pbVar1;
+  *(byte *)(DAT_1008be44 + 0x14) = bVar2;
+  FUN_10086fb8(bVar2,DAT_1008be48,*pbVar1,in_stack_00000004 >> 0x20);
+  FUN_10082700(0x2a);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ56_Handler @ 0x1008BE40
+──────────────────────────────────────────────────────────────────────
+// No function at this address
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ45_Handler @ 0x1008BE68
+──────────────────────────────────────────────────────────────────────
+
+void IRQ45_Handler(void)
+
+{
+  undefined4 unaff_r11;
+  undefined4 unaff_lr;
+  undefined4 in_cr13;
+  
+  coprocessor_moveto2(8,0xb,unaff_lr,unaff_r11,in_cr13);
+  FUN_10082720(0x32);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ53_Handler @ 0x1008BE90
+──────────────────────────────────────────────────────────────────────
+
+void IRQ53_Handler(void)
+
+{
+  FUN_10082700(0x3e);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ57_Handler @ 0x1008BEB8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ57_Handler(void)
+
+{
+  FUN_10082700(0x2b);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ46_Handler @ 0x1008BEE0
+──────────────────────────────────────────────────────────────────────
+
+void IRQ46_Handler(void)
+
+{
+  FUN_10082700(0x33);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ54_Handler @ 0x1008BF08
+──────────────────────────────────────────────────────────────────────
+
+void IRQ54_Handler(void)
+
+{
+  FUN_10082700(0x3f);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ58_Handler @ 0x1008BF30
+──────────────────────────────────────────────────────────────────────
+
+void IRQ58_Handler(void)
+
+{
+  FUN_10082700(0x2c);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ47_Handler @ 0x1008BF58
+──────────────────────────────────────────────────────────────────────
+
+void IRQ47_Handler(void)
+
+{
+  FUN_10082700(0x38);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ55_Handler @ 0x1008BF80
+──────────────────────────────────────────────────────────────────────
+
+void IRQ55_Handler(void)
+
+{
+  FUN_10082700(0x2d);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ59_Handler @ 0x1008BFA8
+──────────────────────────────────────────────────────────────────────
+
+void IRQ59_Handler(void)
+
+{
+  FUN_10082700(0x35);
+  return;
+}
+
+
+
+──────────────────────────────────────────────────────────────────────
+// IRQ11_Handler @ 0x1008BFD0
+──────────────────────────────────────────────────────────────────────
+
+void IRQ11_Handler(void)
+
+{
+  FUN_10082700(0x39);
+  return;
+}
+
+

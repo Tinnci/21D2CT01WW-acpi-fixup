@@ -9,6 +9,7 @@ version = "0.1.0"
 
 [dependencies]
 python = ">=3.12,<4"
+capstone = ">=5.0.7,<6"
 
 [feature.spi-flash]
 platforms = ["osx-64"]
