@@ -31,3 +31,5 @@ coverage.xml
 .DS_Store
 
 Z13Z16刷机包/
+docs/ec_bios_structure.out
+docs/ec_bios_structure.log

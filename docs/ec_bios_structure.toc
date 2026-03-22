@@ -1,0 +1,25 @@
+\contentsline {section}{\numberline {1}概览}{3}{section.1}%
+\contentsline {section}{\numberline {2}SPI Flash 完整地图}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}32MB 全局视图}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}EC 区域详细视图 (0x000000 -- 0x100000)}{4}{subsection.2.2}%
+\contentsline {section}{\numberline {3}EC 镜像内部结构}{4}{section.3}%
+\contentsline {subsection}{\numberline {3.1}\_EC Header (256 bytes, ver=2)}{4}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}向量表 (80 entries, 320 bytes)}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}启动流程}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}内存映射}{5}{subsection.3.4}%
+\contentsline {section}{\numberline {4}EC 固件版本演化}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}跨版本对比表}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}镜像大小演化}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}EC A/B 双镜像机制}{7}{subsection.4.3}%
+\contentsline {section}{\numberline {5}PSP 固件组件}{7}{section.5}%
+\contentsline {subsection}{\numberline {5.1}PSP L2 组件清单}{7}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}跨版本固件匹配率}{7}{subsection.5.2}%
+\contentsline {section}{\numberline {6}BIOS 与 UEFI 组件}{8}{section.6}%
+\contentsline {subsection}{\numberline {6.1}BIOS L2 目录 (\$BL2)}{8}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}UEFI Firmware Volume}{8}{subsection.6.2}%
+\contentsline {section}{\numberline {7}IRQ Handler 分析}{8}{section.7}%
+\contentsline {subsection}{\numberline {7.1}向量表使用情况}{8}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Handler 变体分组}{9}{subsection.7.2}%
+\contentsline {section}{\numberline {8}LADD 描述符}{9}{section.8}%
+\contentsline {section}{\numberline {9}TPS PD 控制器固件}{9}{section.9}%
+\contentsline {section}{\numberline {10}工具脚本清单}{9}{section.10}%
